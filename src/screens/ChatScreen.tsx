@@ -7,6 +7,7 @@ import { useChatStore } from '../stores/chatStore';
 import { useUserStore } from '../stores/userStore';
 import { createSSEConnection } from '../services/chat';
 import VoiceRecordButton from '../components/VoiceRecordButton';
+import RecognizeModal from '../components/RecognizeModal';
 import api from '../services/api';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
@@ -14,6 +15,7 @@ type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
+  const [recognizeVisible, setRecognizeVisible] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -78,6 +80,31 @@ export default function ChatScreen() {
     flushStreamContent();
   }, []);
 
+  const handleSpotRecognized = useCallback((spot: { name: string; lat: number; lng: number; desc?: string; category?: string }) => {
+    const content = `[拍照识景] 识别到: ${spot.name}${spot.category ? ` (${spot.category}类景点)` : ''}。请介绍一下这个景点。`;
+    setInputText('');
+    addMessage({ id: Date.now(), role: 'user', content });
+    setStreaming(true);
+
+    const controller = createSSEConnection(
+      content,
+      {
+        onMetadata: (data) => {
+          if (data.conversation_id) setConversationId(data.conversation_id);
+        },
+        onFragment: (content) => appendStreamContent(content),
+        onDone: () => flushStreamContent(),
+        onError: (error) => {
+          Alert.alert('错误', error);
+          flushStreamContent();
+        },
+      },
+      conversationId,
+      userId,
+    );
+    abortRef.current = controller;
+  }, [conversationId, userId, addMessage, setStreaming, appendStreamContent, flushStreamContent, setConversationId]);
+
   useEffect(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
   }, [messages, streamingContent]);
@@ -106,8 +133,10 @@ export default function ChatScreen() {
             <Text style={styles.emptyTitle}>景区AI数字人导览</Text>
             <Text style={styles.emptySubtitle}>语音或文字向我提问</Text>
             <View style={styles.quickPrompts}>
-              {['景区介绍', '游览路线', '门票价格', '开放时间'].map((q) => (
-                <TouchableOpacity key={q} style={styles.quickPrompt} onPress={() => setInputText(q)}>
+              {['景区介绍', '游览路线', '拍照识景', '门票价格', '开放时间'].map((q) => (
+                <TouchableOpacity key={q} style={styles.quickPrompt} onPress={() => {
+                  if (q === '拍照识景') { setRecognizeVisible(true); } else { setInputText(q); }
+                }}>
                   <Text style={styles.quickPromptText}>{q}</Text>
                 </TouchableOpacity>
               ))}
@@ -172,10 +201,25 @@ export default function ChatScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>AI 景区导览</Text>
-        <TouchableOpacity onPress={clearMessages}>
-          <Text style={styles.clearBtn}>新建对话</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={() => setRecognizeVisible(true)} style={styles.cameraHeaderBtn}>
+            <Text style={{ fontSize: 18 }}>📷</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={clearMessages}>
+            <Text style={styles.clearBtn}>新建对话</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* Photo recognition modal */}
+      <RecognizeModal
+        visible={recognizeVisible}
+        onClose={() => setRecognizeVisible(false)}
+        onSpotRecognized={(spot) => {
+          setRecognizeVisible(false);
+          handleSpotRecognized(spot);
+        }}
+      />
 
       {/* Body: KAV only on iOS, plain View on Android (uses native adjustResize) */}
       {Platform.OS === 'ios' ? (
@@ -201,6 +245,11 @@ const styles = StyleSheet.create({
     padding: 16, paddingTop: 50, backgroundColor: '#FFFFFF', borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB',
   },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cameraHeaderBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: '#EFF6FF',
+    alignItems: 'center', justifyContent: 'center',
+  },
   clearBtn: { color: '#2563EB', fontSize: 14, fontWeight: '500' },
   messageList: { flex: 1 },
   messageContent: { padding: 16, paddingBottom: 8 },

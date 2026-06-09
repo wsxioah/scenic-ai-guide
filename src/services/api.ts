@@ -1,3 +1,5 @@
+import { readAsStringAsync, EncodingType } from 'expo-file-system/legacy';
+
 const API_BASE = 'http://10.223.11.225:8001'; // LAN IP for physical device
 // For physical device, use your computer's LAN IP, e.g. 'http://192.168.1.100:8000'
 
@@ -84,6 +86,36 @@ class ApiClient {
   // Knowledge search
   async searchKnowledge(query: string) {
     return this.request<any>(`/api/knowledge/search?q=${encodeURIComponent(query)}`);
+  }
+
+  // Scenic spot recognition from image
+  async recognizeScenic(imageUri: string): Promise<{
+    is_scenic: boolean;
+    spot_name: string;
+    confidence: number;
+    category?: string;
+    description?: string;
+    ai_description?: string;
+    lat?: number;
+    lng?: number;
+  }> {
+    const url = `${this.baseUrl}/api/scenic/recognize`;
+    const base64 = await readAsStringAsync(imageUri, {
+      encoding: EncodingType.Base64,
+    });
+
+    const formData = new FormData();
+    formData.append('image', base64);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
   }
 
   getBaseUrl() {

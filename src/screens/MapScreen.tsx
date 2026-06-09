@@ -522,6 +522,7 @@ export default function MapScreen() {
       <TouchableOpacity style={styles.locateBtn} onPress={goToMyLocation}>
         <Text style={{ fontSize: 18, color: '#2563EB' }}>◎</Text>
       </TouchableOpacity>
+
     </View>
   );
 }
