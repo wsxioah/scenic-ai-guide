@@ -1,4 +1,4 @@
-package com.anonymous.mobile
+package com.scenic.ai.guide
 
 import android.os.Build
 import android.os.Bundle
