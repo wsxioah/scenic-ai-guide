@@ -3,7 +3,7 @@ import { Pressable, Text, StyleSheet, Alert, Platform } from 'react-native';
 import { useAudioRecorder, requestRecordingPermissionsAsync } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 
-const API_BASE = 'http://10.223.11.225:8000';
+const API_BASE = 'http://10.223.11.225:8001';
 
 const RECORDING_OPTIONS = {
   extension: '.m4a',
