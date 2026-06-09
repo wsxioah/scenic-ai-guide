@@ -53,6 +53,8 @@ export default function VoiceRecordButton({ onResult, onStateChange, disabled }:
       console.log('[Voice] Response data:', JSON.stringify(data));
       if (data.text) {
         onResultRef.current(data.text);
+      } else if (data.error) {
+        Alert.alert('识别失败', data.error);
       } else {
         Alert.alert('识别失败', '未检测到语音，请重试');
       }
