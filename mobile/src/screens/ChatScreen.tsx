@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { useChatStore } from '../stores/chatStore';
 import { useUserStore } from '../stores/userStore';
-import { createSSEConnection } from '../services/chat';
 import VoiceRecordButton from '../components/VoiceRecordButton';
 import RecognizeModal from '../components/RecognizeModal';
 import AvatarWebView, { avatarSendAction } from '../components/AvatarWebView';
@@ -13,16 +12,18 @@ import api from '../services/api';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 
+const WS_URL = 'ws://localhost:8000/ws';
+
 export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [recognizeVisible, setRecognizeVisible] = useState(false);
   const flatListRef = useRef<FlatList>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   const {
-    conversationId, messages, isStreaming, streamingContent,
-    addMessage, setConversationId, setStreaming, appendStreamContent,
+    messages, isStreaming, streamingContent,
+    addMessage, setStreaming, appendStreamContent,
     flushStreamContent, clearMessages,
   } = useChatStore();
 
@@ -37,6 +38,72 @@ export default function ChatScreen() {
     }
   }, []);
 
+  // ===== WebSocket connection =====
+  const connectWS = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    console.log('[Chat] Connecting WebSocket to', WS_URL);
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log('[Chat] WS connected');
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+          case 'llm_token':
+            appendStreamContent(data.token);
+            break;
+          case 'llm_done':
+            flushStreamContent();
+            setStreaming(false);
+            break;
+          case 'tts_ready':
+            if (data.audio_url) {
+              avatarSendAction('speak', { audioUrl: data.audio_url });
+            }
+            break;
+          case 'status':
+            // status updates handled by WebView overlay
+            break;
+          case 'ready':
+            setStreaming(false);
+            break;
+          case 'error':
+            Alert.alert('错误', data.message);
+            flushStreamContent();
+            setStreaming(false);
+            break;
+        }
+      } catch (e) {
+        console.log('[Chat] WS parse error:', e);
+      }
+    };
+
+    ws.onerror = (e) => {
+      console.log('[Chat] WS error:', e);
+    };
+
+    ws.onclose = (e) => {
+      console.log('[Chat] WS closed, code:', e.code);
+      wsRef.current = null;
+      // Reconnect after 2s
+      setTimeout(connectWS, 2000);
+    };
+  }, [appendStreamContent, flushStreamContent, setStreaming]);
+
+  // Connect on mount
+  useEffect(() => {
+    connectWS();
+    return () => {
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
+  }, [connectWS]);
+
   const handleSend = useCallback(() => {
     const text = inputText.trim();
     if (!text || isStreaming) return;
@@ -45,48 +112,21 @@ export default function ChatScreen() {
     addMessage({ id: Date.now(), role: 'user', content: text });
     setStreaming(true);
 
-    avatarSendAction('thinking');
-    let fullResponse = '';
-
-    const controller = createSSEConnection(
-      text,
-      {
-        onMetadata: (data) => {
-          if (data.conversation_id) {
-            setConversationId(data.conversation_id);
-          }
-        },
-        onFragment: (content) => {
-          fullResponse += content;
-          appendStreamContent(content);
-        },
-        onDone: () => {
-          flushStreamContent();
-          // Trigger TTS + lip sync
-          if (fullResponse) {
-            fetch(`${api.getBaseUrl()}/api/voice/tts?text=${encodeURIComponent(fullResponse)}`, { method: 'POST' })
-              .then(r => r.json())
-              .then(data => {
-                if (data.audio) {
-                  avatarSendAction('speak', { base64Audio: data.audio });
-                }
-              })
-              .catch(() => {});
-          }
-          avatarSendAction('idle');
-        },
-        onError: (error) => {
-          Alert.alert('错误', error);
-          flushStreamContent();
-          avatarSendAction('idle');
-        },
-      },
-      conversationId,
-      userId,
-    );
-
-    abortRef.current = controller;
-  }, [inputText, isStreaming, conversationId, userId]);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      console.log('[Chat] Sending query:', text);
+      ws.send(JSON.stringify({
+        type: 'query',
+        text,
+        voice: 'zh-CN-XiaoxiaoNeural',
+      }));
+    } else {
+      console.log('[Chat] WS not connected, reconnecting...');
+      Alert.alert('连接中', '正在连接服务器，请稍后重试');
+      setStreaming(false);
+      connectWS();
+    }
+  }, [inputText, isStreaming, connectWS]);
 
   const handleVoiceResult = useCallback((text: string) => {
     setInputText(text);
@@ -94,9 +134,10 @@ export default function ChatScreen() {
   }, []);
 
   const handleStop = useCallback(() => {
-    abortRef.current?.abort();
     flushStreamContent();
-  }, []);
+    setStreaming(false);
+    avatarSendAction('idle');
+  }, [flushStreamContent, setStreaming]);
 
   const handleSpotRecognized = useCallback((spot: { name: string; lat: number; lng: number; desc?: string; category?: string }) => {
     const content = `[拍照识景] 识别到: ${spot.name}${spot.category ? ` (${spot.category}类景点)` : ''}。请介绍一下这个景点。`;
@@ -104,42 +145,19 @@ export default function ChatScreen() {
     addMessage({ id: Date.now(), role: 'user', content });
     setStreaming(true);
 
-    avatarSendAction('thinking');
-    let fullResponse2 = '';
-
-    const controller = createSSEConnection(
-      content,
-      {
-        onMetadata: (data) => {
-          if (data.conversation_id) setConversationId(data.conversation_id);
-        },
-        onFragment: (content) => {
-          fullResponse2 += content;
-          appendStreamContent(content);
-        },
-        onDone: () => {
-          flushStreamContent();
-          if (fullResponse2) {
-            fetch(`${api.getBaseUrl()}/api/voice/tts?text=${encodeURIComponent(fullResponse2)}`, { method: 'POST' })
-              .then(r => r.json())
-              .then(data => {
-                if (data.audio) avatarSendAction('speak', { base64Audio: data.audio });
-              })
-              .catch(() => {});
-          }
-          avatarSendAction('idle');
-        },
-        onError: (error) => {
-          Alert.alert('错误', error);
-          flushStreamContent();
-          avatarSendAction('idle');
-        },
-      },
-      conversationId,
-      userId,
-    );
-    abortRef.current = controller;
-  }, [conversationId, userId, addMessage, setStreaming, appendStreamContent, flushStreamContent, setConversationId]);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'query',
+        text: content,
+        voice: 'zh-CN-XiaoxiaoNeural',
+      }));
+    } else {
+      Alert.alert('连接中', '正在连接服务器...');
+      setStreaming(false);
+      connectWS();
+    }
+  }, [addMessage, setStreaming, connectWS]);
 
   useEffect(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
@@ -262,7 +280,7 @@ export default function ChatScreen() {
         }}
       />
 
-      {/* Body: KAV only on iOS, plain View on Android (uses native adjustResize) */}
+      {/* Body: KAV only on iOS, plain View on Android */}
       {Platform.OS === 'ios' ? (
         <KeyboardAvoidingView
           style={styles.body}

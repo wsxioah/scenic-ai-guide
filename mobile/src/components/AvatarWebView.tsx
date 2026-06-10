@@ -1,25 +1,27 @@
 import { useRef, useCallback } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, StyleSheet, Dimensions, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface AvatarWebViewProps {
-  onLoaded?: () => void;
   style?: any;
 }
 
-const DIGITAL_HUMAN_URL = 'http://localhost:8000/digital-human/model-lite.html';
+const DIGITAL_HUMAN_URL = Platform.select({
+  android: 'http://localhost:8000/digital-human/model-lite.html?t=' + Date.now(),
+  default: 'http://localhost:8000/digital-human/model-lite.html?t=' + Date.now(),
+});
 
-// Module-level ref for external components to control the avatar
 let _webViewRef: WebView | null = null;
 
 export function avatarSendAction(action: string, extra: Record<string, any> = {}) {
   const message = JSON.stringify({ action, ...extra });
+  console.log('[Avatar] sendAction:', action, 'ref:', !!_webViewRef);
   _webViewRef?.postMessage(message);
 }
 
-export default function AvatarWebView({ onLoaded, style }: AvatarWebViewProps) {
+export default function AvatarWebView({ style }: AvatarWebViewProps) {
   const webViewRef = useRef<WebView>(null);
 
   const onMessage = useCallback((event: any) => {
@@ -27,10 +29,14 @@ export default function AvatarWebView({ onLoaded, style }: AvatarWebViewProps) {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.ready) {
         _webViewRef = webViewRef.current;
-        onLoaded?.();
+        console.log('[Avatar] WebView ready, ref set');
+      }
+      // Forward WebView status changes (informational only)
+      if (data.audioEnded) {
+        console.log('[Avatar] Audio playback ended');
       }
     } catch {}
-  }, [onLoaded]);
+  }, []);
 
   return (
     <View style={[styles.container, style]}>
@@ -42,11 +48,14 @@ export default function AvatarWebView({ onLoaded, style }: AvatarWebViewProps) {
         scrollEnabled={false}
         javaScriptEnabled
         domStorageEnabled
+        cacheEnabled={false}
+        cacheMode="LOAD_NO_CACHE"
         originWhitelist={['*']}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
         onLoad={() => {
           _webViewRef = webViewRef.current;
+          console.log('[Avatar] WebView onLoad, ref set');
         }}
       />
     </View>
