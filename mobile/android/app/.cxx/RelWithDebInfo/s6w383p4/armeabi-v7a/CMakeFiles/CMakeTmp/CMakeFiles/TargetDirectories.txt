@@ -1,0 +1,3 @@
+C:/scenic-app/mobile/android/app/.cxx/RelWithDebInfo/s6w383p4/armeabi-v7a/CMakeFiles/CMakeTmp/CMakeFiles/cmTC_649a3.dir
+C:/scenic-app/mobile/android/app/.cxx/RelWithDebInfo/s6w383p4/armeabi-v7a/CMakeFiles/CMakeTmp/CMakeFiles/edit_cache.dir
+C:/scenic-app/mobile/android/app/.cxx/RelWithDebInfo/s6w383p4/armeabi-v7a/CMakeFiles/CMakeTmp/CMakeFiles/rebuild_cache.dir

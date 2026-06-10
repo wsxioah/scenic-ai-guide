@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "RNMapsSpecs_autolinked_build",
+		"source" : "C:/scenic-app/mobile/node_modules/react-native-maps/android/src/main/jni"
+	}
+}

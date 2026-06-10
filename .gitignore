@@ -1,0 +1,43 @@
+node_modules/
+.expo/
+dist/
+*.jks
+*.keystore
+!android/app/debug.keystore
+
+# Android
+android/app/build/
+android/.gradle/
+android/build/
+android/captures/
+android/local.properties
+*.hprof
+android/build_output.txt
+android/build_error.txt
+android/app/.cxx/
+
+# iOS
+ios/Pods/
+ios/build/
+
+# Backend
+__pycache__/
+*.pyc
+.env
+chroma_data/
+*.db
+*.db-journal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+npm-debug.*

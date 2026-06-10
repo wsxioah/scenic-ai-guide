@@ -1,0 +1,246 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: linear-gradient(135deg, #0f2027 0%, #203a43 30%, #2c5364 100%);
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+}
+
+/* === 顶部标题栏 === */
+.header {
+    height: 56px;
+    background: rgba(0,0,0,0.35);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    z-index: 10;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.header .logo {
+    font-size: 20px;
+    font-weight: bold;
+    color: #fff;
+    letter-spacing: 1px;
+}
+
+.header .logo span {
+    color: #4fc3f7;
+}
+
+.header .status {
+    margin-left: auto;
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.header .status .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #69f0ae;
+}
+
+.header .status .dot.thinking {
+    background: #ffd740;
+    animation: pulse 0.8s infinite;
+}
+
+.header .status .dot.speaking {
+    background: #40c4ff;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* === 主体布局 === */
+.main {
+    flex: 1;
+    display: flex;
+    position: relative;
+    overflow: hidden;
+}
+
+/* === Live2D画布区 === */
+.live2d-stage {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.live2d-stage canvas {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* === 右侧对话面板 === */
+.chat-panel {
+    width: 360px;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(15px);
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid rgba(255,255,255,0.1);
+    z-index: 5;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.chat-messages::-webkit-scrollbar {
+    width: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 2px;
+}
+
+.message {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    animation: fadeIn 0.3s ease;
+    word-break: break-word;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.message.user {
+    align-self: flex-end;
+    background: #1565c0;
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+
+.message.ai {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.12);
+    color: #e0e0e0;
+    border-bottom-left-radius: 4px;
+}
+
+.message.ai.streaming {
+    border-left: 2px solid #4fc3f7;
+}
+
+/* === 底部输入栏 === */
+.input-bar {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    background: rgba(0,0,0,0.4);
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.input-bar input {
+    flex: 1;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 10px 18px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.input-bar input::placeholder {
+    color: rgba(255,255,255,0.35);
+}
+
+.input-bar input:focus {
+    border-color: #4fc3f7;
+}
+
+.input-bar button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.btn-send {
+    background: #1565c0;
+    color: #fff;
+}
+
+.btn-send:hover {
+    background: #1976d2;
+    transform: scale(1.05);
+}
+
+.btn-send:disabled {
+    background: rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.2);
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-mic {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.7);
+}
+
+.btn-mic:hover {
+    background: rgba(255,255,255,0.15);
+}
+
+.btn-mic.listening {
+    background: #e53935;
+    color: #fff;
+    animation: pulse 1s infinite;
+}
+
+/* === 响应式 === */
+@media (max-width: 768px) {
+    .main {
+        flex-direction: column;
+    }
+    .live2d-stage {
+        flex: 0 0 55%;
+    }
+    .chat-panel {
+        flex: 1;
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .chat-messages {
+        max-height: 150px;
+    }
+}
