@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, FlatList,
   StyleSheet, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
+import { useAudioPlayer } from 'expo-audio';
 import { useChatStore } from '../stores/chatStore';
 import { useUserStore } from '../stores/userStore';
 import VoiceRecordButton from '../components/VoiceRecordButton';
@@ -12,6 +13,7 @@ import api from '../services/api';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 
+const API_BASE = 'http://localhost:8000';
 const WS_URL = 'ws://localhost:8000/ws';
 
 export default function ChatScreen() {
@@ -27,6 +29,7 @@ export default function ChatScreen() {
     flushStreamContent, clearMessages,
   } = useChatStore();
 
+  const audioPlayer = useAudioPlayer();
   const { userId, isLoggedIn, login } = useUserStore();
 
   useEffect(() => {
@@ -63,7 +66,14 @@ export default function ChatScreen() {
             break;
           case 'tts_ready':
             if (data.audio_url) {
-              avatarSendAction('speak', { audioUrl: data.audio_url });
+              const fullUrl = data.audio_url.startsWith('http')
+                ? data.audio_url
+                : API_BASE + data.audio_url;
+              console.log('[Chat] Playing TTS:', fullUrl);
+              audioPlayer.replace({ uri: fullUrl });
+              audioPlayer.play();
+              // Also send to WebView for lip-sync (muted, analysis only)
+              avatarSendAction('lipSync', { audioUrl: data.audio_url });
             }
             break;
           case 'status':
@@ -93,7 +103,7 @@ export default function ChatScreen() {
       // Reconnect after 2s
       setTimeout(connectWS, 2000);
     };
-  }, [appendStreamContent, flushStreamContent, setStreaming]);
+  }, [appendStreamContent, flushStreamContent, setStreaming, audioPlayer]);
 
   // Connect on mount
   useEffect(() => {
@@ -136,8 +146,9 @@ export default function ChatScreen() {
   const handleStop = useCallback(() => {
     flushStreamContent();
     setStreaming(false);
+    audioPlayer.stop();
     avatarSendAction('idle');
-  }, [flushStreamContent, setStreaming]);
+  }, [flushStreamContent, setStreaming, audioPlayer]);
 
   const handleSpotRecognized = useCallback((spot: { name: string; lat: number; lng: number; desc?: string; category?: string }) => {
     const content = `[拍照识景] 识别到: ${spot.name}${spot.category ? ` (${spot.category}类景点)` : ''}。请介绍一下这个景点。`;

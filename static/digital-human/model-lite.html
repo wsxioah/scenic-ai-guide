@@ -140,10 +140,10 @@
         if (lipSync && model) {
             lipSync.start(audioElement, function(mouthOpen) {
                 if (model && model.internalModel && model.internalModel.coreModel) {
-                    var v = Math.max(0, Math.min(1, mouthOpen));
+                    var v = Math.max(0, Math.min(1, mouthOpen * 3.0));
                     model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", v);
                 }
-            });
+            }, { muted: false });
         }
 
         audioElement.addEventListener("ended", function() {
@@ -159,6 +159,60 @@
             audioElement = null;
             setStatus("在线");
             notifyRN({ audioError: true });
+        });
+    }
+
+    // Silent audio playback for lip-sync analysis only (RN handles audible output)
+    function playAudioForLipSync(url) {
+        if (audioElement) { audioElement.pause(); audioElement = null; }
+        if (lipSync) lipSync.stop();
+
+        audioElement = new Audio(url);
+        audioElement.volume = 0; // muted — RN expo-audio handles audible playback
+        audioElement.preload = "auto";
+
+        // Start lip-sync in MUTED mode — analyser gets data but no audio output
+        if (lipSync && model) {
+            lipSync.start(audioElement, function(mouthOpen) {
+                if (model && model.internalModel && model.internalModel.coreModel) {
+                    var v = Math.max(0, Math.min(1, mouthOpen * 3.0));
+                    model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", v);
+                }
+            }, { muted: true });
+        }
+
+        function tryPlay() {
+            var p = audioElement.play();
+            if (p) {
+                p.catch(function(e) {
+                    console.warn("LipSync play failed:", e.message);
+                });
+            }
+        }
+
+        // Both events for reliability
+        audioElement.addEventListener("canplay", tryPlay);
+        audioElement.addEventListener("canplaythrough", tryPlay);
+        // Fallback: try playing after a short delay even if events don't fire
+        setTimeout(function() {
+            if (audioElement && audioElement.paused) {
+                console.log("[DH] Force-playing audio after timeout");
+                tryPlay();
+            }
+        }, 1000);
+
+        audioElement.addEventListener("ended", function() {
+            if (lipSync) lipSync.stop();
+            audioElement = null;
+            if (model && model.internalModel && model.internalModel.coreModel) {
+                model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", 0);
+            }
+        });
+
+        audioElement.addEventListener("error", function(e) {
+            console.error("LipSync audio error:", e);
+            if (lipSync) lipSync.stop();
+            audioElement = null;
         });
     }
 
@@ -184,6 +238,12 @@
                 }
                 break;
 
+            case "lipSync":
+                if (data.audioUrl) {
+                    playAudioForLipSync(data.audioUrl);
+                }
+                break;
+
             case "idle":
                 if (audioElement) { audioElement.pause(); audioElement = null; }
                 if (lipSync) lipSync.stop();
@@ -195,6 +255,20 @@
                 break;
         }
     });
+
+    // Unlock AudioContext on first user touch (required by mobile Web Audio policy)
+    function unlockAudio() {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') {
+            ctx.resume().then(function() {
+                console.log('[DH] AudioContext unlocked');
+            });
+        }
+        document.removeEventListener('touchstart', unlockAudio);
+        document.removeEventListener('click', unlockAudio);
+    }
+    document.addEventListener('touchstart', unlockAudio, { once: true });
+    document.addEventListener('click', unlockAudio, { once: true });
 
     // Bootstrap
     initLive2D().catch(function(e) {

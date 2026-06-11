@@ -9,23 +9,34 @@ class LipSync {
         this.isRunning = false;
     }
 
-    async start(audioElement, onMouthUpdate) {
+    async start(audioElement, onMouthUpdate, options) {
         this.stop();
         this.onMouthUpdate = onMouthUpdate;
+        var muted = options && options.muted;
 
         if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
 
+        // Force resume — essential for Android WebView
         if (this.audioContext.state === "suspended") {
-            await this.audioContext.resume();
+            try {
+                await this.audioContext.resume();
+                console.log("[LipSync] AudioContext resumed, state=" + this.audioContext.state);
+            } catch(e) {
+                console.warn("[LipSync] AudioContext resume failed:", e.message);
+            }
         }
 
         this.source = this.audioContext.createMediaElementSource(audioElement);
         this.analyser = this.audioContext.createAnalyser();
         this.analyser.fftSize = 256;
         this.source.connect(this.analyser);
-        this.analyser.connect(this.audioContext.destination);
+
+        // Only connect to destination if NOT muted (RN handles audio playback separately)
+        if (!muted) {
+            this.analyser.connect(this.audioContext.destination);
+        }
 
         this.isRunning = true;
         this._loop();
@@ -34,30 +45,29 @@ class LipSync {
     _loop() {
         if (!this.isRunning) return;
 
-        const bufferLength = this.analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+        var bufferLength = this.analyser.frequencyBinCount;
+        var dataArray = new Uint8Array(bufferLength);
         this.analyser.getByteTimeDomainData(dataArray);
 
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-            const v = (dataArray[i] - 128) / 128;
+        var sum = 0;
+        for (var i = 0; i < bufferLength; i++) {
+            var v = (dataArray[i] - 128) / 128;
             sum += v * v;
         }
-        const rms = Math.sqrt(sum / bufferLength);
+        var rms = Math.sqrt(sum / bufferLength);
 
-        const SILENCE = 0.02;
-        const MAX = 0.35;
-        const raw = Math.max(0, Math.min(1, (rms - SILENCE) / (MAX - SILENCE)));
+        var SILENCE = 0.02;
+        var MAX = 0.35;
+        var raw = Math.max(0, Math.min(1, (rms - SILENCE) / (MAX - SILENCE)));
 
         this.smoothedRMS = this.smoothedRMS * 0.3 + raw * 0.7;
-        // Ensure mouth has some movement when speaking
-        const mouthOpen = Math.max(raw, this.smoothedRMS * 0.6);
+        var mouthOpen = Math.max(raw, this.smoothedRMS * 0.6);
 
         if (this.onMouthUpdate) {
             this.onMouthUpdate(mouthOpen);
         }
 
-        this.animFrameId = requestAnimationFrame(() => this._loop());
+        this.animFrameId = requestAnimationFrame(function() { this._loop(); }.bind(this));
     }
 
     stop() {
