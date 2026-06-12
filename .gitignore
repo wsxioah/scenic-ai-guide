@@ -27,6 +27,7 @@ __pycache__/
 chroma_data/
 *.db
 *.db-journal
+static/audio/*.mp3
 
 # IDE
 .idea/
