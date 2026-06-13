@@ -8,9 +8,11 @@ interface AvatarWebViewProps {
   style?: any;
 }
 
+import { SERVER_URL } from '../config';
+
 const DIGITAL_HUMAN_URL = Platform.select({
-  android: 'http://localhost:8000/digital-human/model-lite.html?t=' + Date.now(),
-  default: 'http://localhost:8000/digital-human/model-lite.html?t=' + Date.now(),
+  android: SERVER_URL + '/digital-human/model-lite.html?t=' + Date.now(),
+  default: SERVER_URL + '/digital-human/model-lite.html?t=' + Date.now(),
 });
 
 let _webViewRef: WebView | null = null;

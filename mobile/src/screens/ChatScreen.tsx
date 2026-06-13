@@ -13,8 +13,10 @@ import api from '../services/api';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 
-const API_BASE = 'http://localhost:8000';
-const WS_URL = 'ws://localhost:8000/ws';
+import { SERVER_URL, WS_URL } from '../config';
+
+const API_BASE = SERVER_URL;
+// WS_URL imported from config
 
 export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
