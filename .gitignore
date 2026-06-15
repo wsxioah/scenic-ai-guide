@@ -1,20 +1,19 @@
 node_modules/
+
+# Expo
 .expo/
 dist/
+
+# Android (mobile/)
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/captures/
+mobile/android/local.properties
+mobile/android/app/.cxx/
 *.jks
 *.keystore
-!android/app/debug.keystore
-
-# Android
-android/app/build/
-android/.gradle/
-android/build/
-android/captures/
-android/local.properties
 *.hprof
-android/build_output.txt
-android/build_error.txt
-android/app/.cxx/
 
 # iOS
 ios/Pods/
@@ -28,6 +27,10 @@ chroma_data/
 *.db
 *.db-journal
 static/audio/*.mp3
+
+# Admin
+admin/node_modules/
+admin/dist/
 
 # IDE
 .idea/

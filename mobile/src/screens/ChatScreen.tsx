@@ -44,8 +44,9 @@ export default function ChatScreen() {
   }, []);
 
   // ===== WebSocket connection =====
+  const connectWSRef = useRef<() => void>(() => {});
   const connectWS = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) return;
 
     console.log('[Chat] Connecting WebSocket to', WS_URL);
     const ws = new WebSocket(WS_URL);
@@ -103,9 +104,10 @@ export default function ChatScreen() {
       console.log('[Chat] WS closed, code:', e.code);
       wsRef.current = null;
       // Reconnect after 2s
-      setTimeout(connectWS, 2000);
+      setTimeout(connectWSRef.current, 2000);
     };
   }, [appendStreamContent, flushStreamContent, setStreaming, audioPlayer]);
+  connectWSRef.current = connectWS;
 
   // Connect on mount
   useEffect(() => {
@@ -132,13 +134,16 @@ export default function ChatScreen() {
         text,
         voice: 'zh-CN-XiaoxiaoNeural',
       }));
+    } else if (ws?.readyState === WebSocket.CONNECTING) {
+      Alert.alert('请稍候', '正在连接服务器...');
+      setStreaming(false);
     } else {
       console.log('[Chat] WS not connected, reconnecting...');
       Alert.alert('连接中', '正在连接服务器，请稍后重试');
       setStreaming(false);
-      connectWS();
+      connectWSRef.current();
     }
-  }, [inputText, isStreaming, connectWS]);
+  }, [inputText, isStreaming]);
 
   const handleVoiceResult = useCallback((text: string) => {
     setInputText(text);
@@ -165,12 +170,15 @@ export default function ChatScreen() {
         text: content,
         voice: 'zh-CN-XiaoxiaoNeural',
       }));
+    } else if (ws?.readyState === WebSocket.CONNECTING) {
+      Alert.alert('请稍候', '正在连接服务器...');
+      setStreaming(false);
     } else {
       Alert.alert('连接中', '正在连接服务器...');
       setStreaming(false);
-      connectWS();
+      connectWSRef.current();
     }
-  }, [addMessage, setStreaming, connectWS]);
+  }, [addMessage, setStreaming]);
 
   useEffect(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);

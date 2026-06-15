@@ -1,99 +1,61 @@
-# 灵山AI导览 - 完整部署指南
+# 灵山AI导览 - 部署指南
 
 ## 环境要求
 
-| 依赖 | 版本 | 说明 |
-|------|------|------|
-| Python | 3.10+ | 后端服务 |
-| Node.js | 18+ | 前端构建（如需开发） |
-| Android SDK | 34+ | APK 构建/安装 |
-| Android 手机 | Android 9+ | 运行 App |
-| ADB | 最新 | 连接手机、端口转发 |
+- Python 3.10+
+- Android 手机 (Android 9+)
+- 电脑和手机连接同一 WiFi/热点
 
 ## 1. 启动后端
 
 ```bash
-# 进入后端目录
 cd backend
-
-# 安装依赖
 pip install -r requirements.txt
 
 # （可选）配置 LLM API Key
-# 编辑 .env 文件，设置 llm_api_key=你的API密钥
+# 编辑 .env，设置 llm_api_key=你的API密钥
 
-# 启动服务（默认端口 8000）
 python run.py
-
-# 验证
-curl http://localhost:8000/
-# 应返回：{"name":"景区AI数字人导览","status":"running"}
+# 服务运行在 http://0.0.0.0:8000
 ```
 
-## 2. 安装 App 到手机
+验证：浏览器打开 `http://localhost:8000/`，应返回 JSON。
 
-### 方式一：直接安装预构建 APK
+## 2. 配置 App 连接地址
 
-```bash
-# APK 在仓库中：mobile/android/app/build/outputs/apk/release/app-release.apk
-adb install mobile/android/app/build/outputs/apk/release/app-release.apk
+编辑 `mobile/src/config.ts`，将 `SERVER_HOST` 改为你电脑的局域网 IP：
+
+```ts
+export const SERVER_HOST = '192.168.1.100';  // 改成你的 IP
+export const SERVER_PORT = 8000;
 ```
 
-### 方式二：自己构建 APK
+查看电脑 IP：终端运行 `ipconfig`，找 `IPv4 地址`。
+
+## 3. 构建并安装 App
 
 ```bash
 cd mobile
-
-# 安装 JS 依赖
 npm install
-
-# 构建 Android APK
-cd android
-# Windows: 运行 build_apk.bat
-# macOS/Linux: ./gradlew assembleRelease
+npx expo run:android --variant release
 ```
 
-构建完成后 APK 位于 `mobile/android/app/build/outputs/apk/release/app-release.apk`
-
-## 3. 连接手机
-
+或手动安装已构建的 APK：
 ```bash
-# USB 连接手机，开启开发者选项和 USB 调试
-
-# 确认设备已连接
-adb devices
-
-# 设置端口转发（将手机 localhost:8000 映射到电脑 8000）
-adb reverse tcp:8000 tcp:8000
-
-# 验证端口转发
-adb reverse --list
-# 应显示：tcp:8000 tcp:8000
+adb install mobile/android/app/build/outputs/apk/release/app-release.apk
 ```
 
-## 4. 使用
-
-1. 确保后端正在运行（`python run.py`）
-2. 确保 ADB 端口转发已设置（`adb reverse tcp:8000 tcp:8000`）
-3. 打开手机上的「AI 景区导览」App
-4. 打字或按住语音按钮提问
-5. 数字人会自动说话回答
-
-## 5. 常见问题
+## 4. 常见问题
 
 **Q: App 显示"正在连接服务器"**
-- 检查后端是否启动：`curl http://localhost:8000/`
-- 检查 ADB 端口转发：`adb reverse --list`
-- 重新设置转发：`adb reverse tcp:8000 tcp:8000`
+- 确认手机和电脑同一 WiFi
+- 确认 `config.ts` 中 IP 正确
+- 确认后端已启动：`curl http://localhost:8000/`
+- Windows 需放行防火墙端口 8000
 
 **Q: 数字人不说话**
-- 确认手机音量未静音
-- 检查后端日志是否有 TTS 错误
+- 检查手机音量
+- 检查后端日志是否有 TTS/LLM 错误
 
-**Q: 数字人张嘴但不出声**
-- 检查 ADB 端口转发是否正常
-- 手机音量是否开启
-
-**Q: USB 断开后无法连接**
-- 重新插拔 USB
-- 重新运行 `adb reverse tcp:8000 tcp:8000`
+**Q: AI 不回复**
+- 检查 `.env` 中是否配置了 `llm_api_key`
