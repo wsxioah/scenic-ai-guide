@@ -32,6 +32,31 @@ export default function ChatScreen() {
   } = useChatStore();
 
   const audioPlayer = useAudioPlayer();
+  const audioQueueRef = useRef<string[]>([]);
+  const audioPlayingRef = useRef(false);
+
+  // Sequential audio queue playback
+  const playNextInQueue = useCallback(() => {
+    if (audioQueueRef.current.length === 0) {
+      audioPlayingRef.current = false;
+      return;
+    }
+    const url = audioQueueRef.current.shift()!;
+    audioPlayingRef.current = true;
+    const fullUrl = url.startsWith('http') ? url : API_BASE + url;
+    audioPlayer.replace({ uri: fullUrl });
+    audioPlayer.play();
+  }, [audioPlayer]);
+
+  useEffect(() => {
+    const sub = audioPlayer.addListener('playbackStatusUpdate', (status: any) => {
+      if (status.didJustFinish) {
+        playNextInQueue();
+      }
+    });
+    return () => sub?.remove();
+  }, [audioPlayer, playNextInQueue]);
+
   const { userId, isLoggedIn, login } = useUserStore();
 
   useEffect(() => {
@@ -68,15 +93,27 @@ export default function ChatScreen() {
             setStreaming(false);
             break;
           case 'tts_ready':
+            // Single-file mode (backward compat)
             if (data.audio_url) {
               const fullUrl = data.audio_url.startsWith('http')
                 ? data.audio_url
                 : API_BASE + data.audio_url;
-              console.log('[Chat] Playing TTS:', fullUrl);
               audioPlayer.replace({ uri: fullUrl });
               audioPlayer.play();
-              // Also send to WebView for lip-sync (muted, analysis only)
+              audioPlayingRef.current = true;
               avatarSendAction('lipSync', { audioUrl: data.audio_url });
+            }
+            break;
+          case 'tts_chunk':
+            // Sentence-level streaming audio
+            if (data.audio_url) {
+              audioQueueRef.current.push(data.audio_url);
+              if (data.chunk_index === 0 && data.chunk_total > 1) {
+                avatarSendAction('lipSync', { audioUrl: data.audio_url });
+              }
+              if (!audioPlayingRef.current) {
+                playNextInQueue();
+              }
             }
             break;
           case 'status':
@@ -154,6 +191,8 @@ export default function ChatScreen() {
     flushStreamContent();
     setStreaming(false);
     audioPlayer.stop();
+    audioQueueRef.current = [];
+    audioPlayingRef.current = false;
     avatarSendAction('idle');
   }, [flushStreamContent, setStreaming, audioPlayer]);
 

@@ -29,8 +29,10 @@ class SimpleKeywordEmbedding:
     def __call__(self, input: list[str]) -> list[list[float]]:
         return [self._embed_text(t) for t in input]
 
-    def embed_query(self, text: str) -> list[float]:
-        return self._embed_text(text)
+    def embed_query(self, input) -> list[float] | list[list[float]]:
+        if isinstance(input, list):
+            return [self._embed_text(t) for t in input]
+        return self._embed_text(input)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [self._embed_text(t) for t in texts]

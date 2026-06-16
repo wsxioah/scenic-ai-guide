@@ -1,13 +1,14 @@
+import asyncio
 import json
+import re
 import uuid
 import os
 
+import edge_tts
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.core.config import settings
 from app.services.llm_service import LLMService
 from app.services.rag_service import RAGService
-
-import edge_tts
+from app.core.config import settings
 
 router = APIRouter()
 llm_service = LLMService()
@@ -16,18 +17,70 @@ rag_service = RAGService()
 AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "static", "audio")
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
-SYSTEM_PROMPT = """你是景区的AI数字人导游"小景"，一个热情友好的虚拟导游。
+SENTENCE_END_RE = re.compile(r'[。！？!?\n]')
+EMOTION_TAG_RE = re.compile(r'[（(][^）)]*[）)]|【[^】]*】|\*\*[^*]*\*\*|#{1,6}\s*')
 
-你的职责：
-1. 为游客介绍景区景点、历史文化、游览路线
-2. 回答游客关于门票、开放时间、交通等问题
-3. 推荐适合的游览方案
+VOICE = "zh-CN-XiaoxiaoNeural"
 
-回答要求：
-- 语气热情亲切，像真人导游一样
-- 回答简洁有料，每次控制在100字左右
-- 如果不知道，诚实告知并建议游客咨询景区工作人员
-- 使用中文"""
+SYSTEM_PROMPT = """你是景区AI导游"小景"。用热情口语化的中文回答，每次80-100字。用短句，少用逗号，句末用句号。禁止括号、markdown、表情。不知道就建议咨询工作人员。"""
+
+
+def _prewarm_edge_tts():
+    """预热 edge-tts 的 TCP+TLS 连接，减少首次TTS延迟"""
+    import socket
+    import ssl
+    try:
+        addrs = socket.getaddrinfo("speech.platform.bing.com", 443, proto=socket.IPPROTO_TCP)
+        for addr in addrs:
+            sock = socket.socket(addr[0], socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect(addr[4])
+            ctx = ssl.create_default_context()
+            ssock = ctx.wrap_socket(sock, server_hostname="speech.platform.bing.com")
+            ssock.close()
+            break
+    except Exception:
+        pass
+
+
+def _prewarm_llm_api():
+    """预热LLM API的TCP+TLS连接"""
+    import socket
+    import ssl
+    from urllib.parse import urlparse
+    try:
+        base = settings.llm_base_url or "https://api.deepseek.com/v1"
+        host = urlparse(base).hostname or "api.deepseek.com"
+        addrs = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+        for addr in addrs:
+            sock = socket.socket(addr[0], socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect(addr[4])
+            ctx = ssl.create_default_context()
+            ssock = ctx.wrap_socket(sock, server_hostname=host)
+            ssock.close()
+            break
+    except Exception:
+        pass
+
+
+_prewarm_edge_tts()
+_prewarm_llm_api()
+
+
+def _clean_text_for_tts(text: str) -> str:
+    text = EMOTION_TAG_RE.sub("", text)
+    text = text.replace("*", "").replace("#", "").replace("_", "")
+    return text.strip()
+
+
+async def _edge_tts_stream(text: str, output_mp3: str) -> str:
+    communicate = edge_tts.Communicate(text, VOICE)
+    with open(output_mp3, "wb") as f:
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                f.write(chunk["data"])
+    return output_mp3
 
 
 @router.websocket("/ws")
@@ -47,59 +100,109 @@ async def websocket_digital_human(ws: WebSocket):
                 continue
 
             user_text = data.get("text", "").strip()
-            voice_name = data.get("voice", settings.tts_voice)
-
             if not user_text:
                 await send({"type": "error", "message": "请输入内容"})
                 continue
 
             await send({"type": "status", "state": "thinking"})
 
-            # RAG knowledge retrieval
-            knowledge = await rag_service.search(user_text, top_k=3)
+            knowledge = await rag_service.search(user_text, top_k=1)
             if knowledge:
-                ctx = "\n".join([f"- {k['title']}: {k['content'][:300]}" for k in knowledge])
-                system_prompt = SYSTEM_PROMPT + f"\n\n可参考的景区知识：\n{ctx}"
+                ctx = "\n".join([f"- {k['title']}: {k['content'][:80]}" for k in knowledge])
+                system_prompt = SYSTEM_PROMPT + f"\n参考：{ctx}"
             else:
                 system_prompt = SYSTEM_PROMPT
 
-            # LLM streaming
+            # Phase 1: Stream LLM, kick off first chunk TTS early
             full_text = ""
+            current = ""
+            first_tts_task = None
+            first_sentence_end = 0
+            first_file = os.path.join(AUDIO_DIR, f"{session_id}_0.mp3")
+
             try:
-                async for token in llm_service.chat_stream(system_prompt, user_text):
+                async for token in llm_service.chat_stream(
+                    system_prompt, user_text, max_tokens=110, temperature=0.3
+                ):
                     full_text += token
+                    current += token
                     await send({"type": "llm_token", "token": token})
+
+                    if first_tts_task is None:
+                        cur_len = len(current.strip())
+                        # 只在句末标点（。！？）处触发首次TTS，不在逗号处拆分，避免不自然停顿
+                        if SENTENCE_END_RE.search(token) and cur_len >= 8:
+                            pass  # trigger at sentence end
+                        elif cur_len >= 22:
+                            pass  # force trigger for very long first sentence
+                        else:
+                            continue
+                        first_sentence_end = len(full_text)
+                        text = _clean_text_for_tts(current.strip())
+                        if text:
+                            first_tts_task = asyncio.create_task(
+                                _edge_tts_stream(text, first_file)
+                            )
             except Exception as e:
                 await send({"type": "error", "message": f"AI回复失败：{str(e)}"})
                 continue
 
             await send({"type": "llm_done", "full_text": full_text})
 
-            if not full_text.strip():
+            # Phase 2: Prepare remaining text as single second chunk
+            if first_tts_task is not None:
+                rest_text = _clean_text_for_tts(full_text[first_sentence_end:].strip())
+            else:
+                rest_text = _clean_text_for_tts(full_text.strip())
+
+            if not rest_text and first_tts_task is None:
                 await send({"type": "ready"})
                 continue
+
+            if first_tts_task is None:
+                # No early trigger — synthesize everything as one chunk
+                first_tts_task = asyncio.create_task(
+                    _edge_tts_stream(rest_text, first_file)
+                )
+                rest_text = ""
+
+            total = 2 if rest_text else 1
 
             await send({"type": "status", "state": "speaking"})
 
-            # TTS generate
-            try:
-                file_name = f"{session_id}_{uuid.uuid4().hex[:6]}.mp3"
-                file_path = os.path.join(AUDIO_DIR, file_name)
-                communicate = edge_tts.Communicate(full_text, voice_name)
-                await communicate.save(file_path)
+            # Start second chunk TTS in parallel if needed
+            second_tts_task = None
+            if rest_text:
+                second_file = os.path.join(AUDIO_DIR, f"{session_id}_1.mp3")
+                second_tts_task = asyncio.create_task(
+                    _edge_tts_stream(rest_text, second_file)
+                )
 
-                audio_url = f"/static/audio/{file_name}"
+            # Phase 3: Send chunks — chunk 0 first, then chunk 1
+            await first_tts_task
+            await send({
+                "type": "tts_chunk",
+                "audio_url": f"/static/audio/{session_id}_0.mp3",
+                "chunk_index": 0,
+                "chunk_total": total,
+            })
+
+            if second_tts_task:
+                await second_tts_task
                 await send({
-                    "type": "tts_ready",
-                    "audio_url": audio_url,
-                    "text": full_text,
+                    "type": "tts_chunk",
+                    "audio_url": f"/static/audio/{session_id}_1.mp3",
+                    "chunk_index": 1,
+                    "chunk_total": total,
                 })
-            except Exception as e:
-                await send({"type": "error", "message": f"语音合成失败：{str(e)}"})
-                await send({"type": "ready"})
-                continue
 
             await send({"type": "ready"})
 
     except WebSocketDisconnect:
         pass
+    except Exception as e:
+        print(f"[WS] Unexpected error: {e}")
+        try:
+            await ws.close()
+        except Exception:
+            pass

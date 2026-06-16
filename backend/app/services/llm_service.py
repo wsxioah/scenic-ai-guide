@@ -5,44 +5,62 @@ from app.core.config import settings
 
 
 class LLMService:
-    """多LLM Provider支持"""
+    """多LLM Provider支持（共享连接池，减少TCP+TLS握手延迟）"""
 
-    async def chat_stream(self, system_prompt: str, user_message: str) -> AsyncIterator[str]:
+    def __init__(self):
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60, connect=10),
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=20),
+            )
+        return self._client
+
+    async def chat_stream(
+        self, system_prompt: str, user_message: str,
+        max_tokens: int = 300, temperature: float = 0.4
+    ) -> AsyncIterator[str]:
         if settings.llm_provider == "dashscope":
-            async for token in self._dashscope_stream(system_prompt, user_message):
+            async for token in self._dashscope_stream(system_prompt, user_message, max_tokens, temperature):
                 yield token
         elif settings.llm_provider in ("openai", "deepseek", "doubao"):
-            async for token in self._openai_stream(system_prompt, user_message):
+            async for token in self._openai_stream(system_prompt, user_message, max_tokens, temperature):
                 yield token
         else:
             async for token in self._mock_stream(system_prompt, user_message):
                 yield token
 
-    async def _dashscope_stream(self, system_prompt: str, user_message: str) -> AsyncIterator[str]:
-        """阿里云DashScope流式调用"""
+    async def _dashscope_stream(
+        self, system_prompt: str, user_message: str,
+        max_tokens: int = 300, temperature: float = 0.4
+    ) -> AsyncIterator[str]:
         api_key = settings.llm_api_key or os.getenv("DASHSCOPE_API_KEY", "")
         if not api_key:
             async for t in self._mock_stream(system_prompt, user_message):
                 yield t
             return
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.llm_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "stream": True,
-                    "temperature": 0.7,
-                },
-            )
+        client = await self._get_client()
+        async with client.stream(
+            "POST",
+            "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.llm_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "stream": True,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        ) as response:
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
@@ -58,28 +76,32 @@ class LLMService:
                     except (json.JSONDecodeError, KeyError):
                         continue
 
-    async def _openai_stream(self, system_prompt: str, user_message: str) -> AsyncIterator[str]:
-        """OpenAI兼容API流式调用"""
+    async def _openai_stream(
+        self, system_prompt: str, user_message: str,
+        max_tokens: int = 300, temperature: float = 0.4
+    ) -> AsyncIterator[str]:
         api_key = settings.llm_api_key or os.getenv("OPENAI_API_KEY", "")
         base_url = settings.llm_base_url or "https://api.openai.com/v1"
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            response = await client.post(
-                f"{base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.llm_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
-                    "stream": True,
-                    "temperature": 0.7,
-                },
-            )
+        client = await self._get_client()
+        async with client.stream(
+            "POST",
+            f"{base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.llm_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "stream": True,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            },
+        ) as response:
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data = line[6:]
@@ -111,3 +133,7 @@ class LLMService:
             yield char
             import asyncio
             await asyncio.sleep(0.02)
+
+    async def prewarm(self):
+        """预热LLM API连接"""
+        await self._get_client()

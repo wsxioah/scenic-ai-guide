@@ -27,6 +27,7 @@ chroma_data/
 *.db
 *.db-journal
 static/audio/*.mp3
+static/audio/*.wav
 
 # Admin
 admin/node_modules/
@@ -44,4 +45,10 @@ Thumbs.db
 
 # Misc
 *.log
+*.wav
 npm-debug.*
+tokens_debug.txt
+kokoro_*.txt
+espeak-ng-data/
+espeak_data.zip
+sherpa_models/
