@@ -1,14 +1,13 @@
 import { useRef, useCallback } from 'react';
 import { View, StyleSheet, Dimensions, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { SERVER_URL } from '../config';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface AvatarWebViewProps {
   style?: any;
 }
-
-import { SERVER_URL } from '../config';
 
 const DIGITAL_HUMAN_URL = Platform.select({
   android: SERVER_URL + '/digital-human/model-lite.html?t=' + Date.now(),

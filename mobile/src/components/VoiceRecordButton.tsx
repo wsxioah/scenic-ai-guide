@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
-import { Pressable, Text, StyleSheet, Alert, Platform } from 'react-native';
-import { useAudioRecorder, requestRecordingPermissionsAsync } from 'expo-audio';
+import { Pressable, Text, StyleSheet, Alert } from 'react-native';
+import { useAudioRecorder, requestRecordingPermissionsAsync, AudioQuality } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
-
 import { SERVER_URL } from '../config';
+import { Colors } from '../theme';
 
 const API_BASE = SERVER_URL;
 
@@ -16,13 +16,17 @@ const RECORDING_OPTIONS = {
     outputFormat: 'mpeg4' as const,
     audioEncoder: 'aac' as const,
   },
-  ios: {},
+  ios: {
+    audioQuality: AudioQuality.LOW,
+  },
   web: {},
 };
 
+type VocalState = 'idle' | 'listening' | 'processing' | 'cancelling';
+
 type Props = {
   onResult: (text: string) => void;
-  onStateChange: (state: string) => void;
+  onStateChange: (state: VocalState) => void;
   disabled: boolean;
 };
 
@@ -124,7 +128,7 @@ export default function VoiceRecordButton({ onResult, onStateChange, disabled }:
     ? (swiped ? styles.cancelBtn : styles.listeningBtn)
     : styles.idleBtn;
   const label = listening
-    ? (swiped ? '⚠ 松手取消' : '🔴 正在录音')
+    ? (swiped ? '⚠ 松手取消' : '🔴 正在录音...')
     : '🎤 按住说话';
 
   return (
@@ -144,16 +148,22 @@ export default function VoiceRecordButton({ onResult, onStateChange, disabled }:
 
 const styles = StyleSheet.create({
   btn: {
-    marginTop: 8,
-    height: 52,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
+    marginTop: 8, height: 52, borderRadius: 26,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1.5,
   },
-  idleBtn: { backgroundColor: '#EFF6FF', borderColor: '#93C5FD' },
-  listeningBtn: { backgroundColor: '#DBEAFE', borderColor: '#3B82F6' },
-  cancelBtn: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
-  btnText: { fontSize: 15, fontWeight: '600', color: '#2563EB' },
-  listeningText: { color: '#1D4ED8' },
+  idleBtn: {
+    backgroundColor: Colors.goldSurface,
+    borderColor: Colors.goldLight,
+  },
+  listeningBtn: {
+    backgroundColor: Colors.goldLight,
+    borderColor: Colors.gold,
+  },
+  cancelBtn: {
+    backgroundColor: Colors.vermilionLight,
+    borderColor: Colors.vermilion,
+  },
+  btnText: { fontSize: 15, fontWeight: '600', color: Colors.goldDark },
+  listeningText: { color: Colors.goldDark },
 });

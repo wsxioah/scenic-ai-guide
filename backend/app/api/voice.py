@@ -1,25 +1,32 @@
 import asyncio
 import json
 import base64
+import subprocess
 import edge_tts
 import tempfile
 import os
 import sys
+
+# ── Ensure project-bundled ffmpeg is on PATH before whisper imports ──
+# Whisper's load_audio() internally calls subprocess.run(["ffmpeg", ...])
+# which requires ffmpeg on PATH — the bundled ffmpeg.exe covers this.
+_FFMPEG = os.path.normpath(os.path.join(
+    os.path.dirname(__file__), "..", "..", "ffmpeg.exe"
+))
+if not os.path.isfile(_FFMPEG):
+    _FFMPEG = "ffmpeg"  # fallback to system PATH
+
+_FFMPEG_DIR = os.path.dirname(_FFMPEG)
+_path_entries = os.environ.get("PATH", "").split(os.pathsep)
+if _FFMPEG_DIR not in _path_entries:
+    os.environ["PATH"] = _FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
+
 import whisper
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.database import get_db
 from app.core.config import settings
-
-# Whisper needs ffmpeg to decode M4A — use WPS-bundled ffmpeg
-_ffmpeg_dir = os.path.join(
-    os.environ.get("APPDATA", ""),
-    "kingsoft", "wps", "addons", "pool", "win-i386",
-    "videotools_3.1.0.138", "videotools"
-)
-if os.path.isdir(_ffmpeg_dir):
-    os.environ["PATH"] = _ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
 
 router = APIRouter()
 
@@ -39,6 +46,26 @@ async def _get_asr_model():
     return _asr_model
 
 
+def _decode_to_wav(audio_bytes: bytes, input_fmt: str) -> str:
+    """Convert M4A/AAC to WAV using ffmpeg, returns path to wav file."""
+    suffix = ".mp4" if "mp4" in input_fmt else ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        raw_path = f.name
+        f.write(audio_bytes)
+    wav_path = raw_path + ".wav"
+    try:
+        subprocess.run(
+            [_FFMPEG, "-y", "-i", raw_path, "-ac", "1", "-ar", "16000", wav_path],
+            capture_output=True, timeout=30, check=True,
+        )
+        return wav_path
+    finally:
+        try:
+            os.unlink(raw_path)
+        except Exception:
+            pass
+
+
 class STTRequest(BaseModel):
     audio: str
     format: str = "audio/mp4"
@@ -52,32 +79,59 @@ async def speech_to_text(req: STTRequest):
     except Exception:
         return {"text": "", "error": "invalid base64"}
 
-    suffix = ".mp4" if "mp4" in req.format else ".wav"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
-        tmp_path = f.name
-        f.write(audio_bytes)
+    # Reject ultra-short clips — less than ~0.5s of AAC at 16kbps
+    if len(audio_bytes) < 1000:
+        return {"text": "", "error": "录音太短，请按住说话至少1秒"}
 
+    # Debug: save a copy of the last recording for inspection
+    _debug_path = os.path.join(tempfile.gettempdir(), "_debug_last_recording.m4a")
     try:
+        with open(_debug_path, "wb") as f:
+            f.write(audio_bytes)
+    except Exception:
+        pass
+
+    wav_path = None
+    try:
+        wav_path = await asyncio.get_event_loop().run_in_executor(
+            None, _decode_to_wav, audio_bytes, req.format,
+        )
+        if not wav_path or not os.path.isfile(wav_path):
+            return {"text": "", "error": "ffmpeg转换失败"}
+
+        # Check WAV duration (16kHz mono 16bit = 32000 bytes/s)
+        wav_size = os.path.getsize(wav_path)
+        if wav_size < 16000:
+            return {"text": "", "error": "录音太短，请按住说话至少1秒"}
+
         model = await _get_asr_model()
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,
             lambda: model.transcribe(
-                tmp_path,
+                wav_path,
                 language="zh",
                 task="transcribe",
                 initial_prompt="以下是中文普通话。",
+                no_speech_threshold=0.6,
+                logprob_threshold=-1.0,
+                compression_ratio_threshold=2.4,
+                condition_on_previous_text=False,
             ),
         )
         text = result.get("text", "").strip()
+        # Filter known hallucinations and ultra-short garbage
+        if len(text) < 2:
+            text = ""
         return {"text": text}
     except Exception as e:
         return {"text": "", "error": str(e)}
     finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        if wav_path:
+            try:
+                os.unlink(wav_path)
+            except Exception:
+                pass
 
 
 @router.websocket("/ws/{user_id}")
@@ -113,33 +167,41 @@ async def _stt_transcribe(audio_b64: str) -> str:
         audio_bytes = base64.b64decode(audio_b64)
     except Exception:
         return ""
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        tmp_path = f.name
-        f.write(audio_bytes)
+    wav_path = None
     try:
-        model = await _get_asr_model()
         loop = asyncio.get_event_loop()
+        wav_path = await loop.run_in_executor(None, _decode_to_wav, audio_bytes, "audio/mp4")
+        if not wav_path or not os.path.isfile(wav_path):
+            return ""
+        model = await _get_asr_model()
         result = await loop.run_in_executor(
             None,
             lambda: model.transcribe(
-                tmp_path,
+                wav_path,
                 language="zh",
                 task="transcribe",
                 initial_prompt="以下是中文普通话。",
+                no_speech_threshold=0.6,
+                logprob_threshold=-1.0,
+                compression_ratio_threshold=2.4,
+                condition_on_previous_text=False,
             ),
         )
-        return result.get("text", "").strip()
+        text = result.get("text", "").strip()
+        return text if len(text) >= 2 else ""
     except Exception as e:
         print(f"STT error: {e}")
         return ""
     finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        if wav_path and os.path.isfile(wav_path):
+            try:
+                os.unlink(wav_path)
+            except Exception:
+                pass
 
 
 async def _text_to_speech_base64(text: str) -> str:
+    tmp_path = None
     try:
         communicate = edge_tts.Communicate(text, settings.tts_voice)
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -147,11 +209,16 @@ async def _text_to_speech_base64(text: str) -> str:
         await communicate.save(tmp_path)
         with open(tmp_path, "rb") as f:
             audio_bytes = f.read()
-        os.unlink(tmp_path)
         return base64.b64encode(audio_bytes).decode("utf-8")
     except Exception as e:
         print(f"TTS error: {e}")
         return ""
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
 
 
 @router.post("/tts")

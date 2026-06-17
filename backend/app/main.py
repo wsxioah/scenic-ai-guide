@@ -6,13 +6,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.models.database import engine, Base
-from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human
+from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi, alerts
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    from app.services.poi_seed import seed_pois
+    await seed_pois()
     yield
     await engine.dispose()
 
@@ -34,13 +36,18 @@ app.include_router(scenic.router, prefix="/api/scenic", tags=["景区"])
 app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"])
 app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
 app.include_router(digital_human.router, tags=["数字人"])
+app.include_router(poi.router, prefix="/api/poi", tags=["POI"])
+app.include_router(alerts.public_router, prefix="/api/alerts", tags=["报警"])
+app.include_router(alerts.router, prefix="/api/admin/alerts", tags=["管理-报警"])
 
 # Static files
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "static")
 AUDIO_STATIC_DIR = os.path.join(STATIC_DIR, "audio")
+DIGITAL_HUMAN_DIR = os.path.join(STATIC_DIR, "digital-human")
 os.makedirs(AUDIO_STATIC_DIR, exist_ok=True)
+os.makedirs(DIGITAL_HUMAN_DIR, exist_ok=True)
 
-app.mount("/digital-human", StaticFiles(directory=os.path.join(STATIC_DIR, "digital-human")), name="digital-human")
+app.mount("/digital-human", StaticFiles(directory=DIGITAL_HUMAN_DIR), name="digital-human")
 app.mount("/static/audio", StaticFiles(directory=AUDIO_STATIC_DIR), name="audio_static")
 
 

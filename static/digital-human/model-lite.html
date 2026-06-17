@@ -103,6 +103,26 @@
         });
 
         notifyRN({ ready: true });
+
+        // Delayed re-fit for mobile WebView (layout may not be ready on first paint)
+        setTimeout(function() {
+            if (pixiApp) {
+                var sw = stage.clientWidth, sh = stage.clientHeight;
+                if (sw > 0 && sh > 0) {
+                    pixiApp.renderer.resize(sw, sh);
+                    fitModelToViewport();
+                }
+            }
+        }, 300);
+        setTimeout(function() {
+            if (pixiApp) {
+                var sw = stage.clientWidth, sh = stage.clientHeight;
+                if (sw > 0 && sh > 0) {
+                    pixiApp.renderer.resize(sw, sh);
+                    fitModelToViewport();
+                }
+            }
+        }, 1000);
     }
 
     function setStatus(text) {

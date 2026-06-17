@@ -1,3 +1,4 @@
+import json
 import os
 import httpx
 from typing import AsyncIterator
@@ -66,7 +67,6 @@ class LLMService:
                     data = line[6:]
                     if data == "[DONE]":
                         break
-                    import json
                     try:
                         chunk = json.loads(data)
                         delta = chunk["choices"][0].get("delta", {})
@@ -107,7 +107,6 @@ class LLMService:
                     data = line[6:]
                     if data == "[DONE]":
                         break
-                    import json
                     try:
                         chunk = json.loads(data)
                         delta = chunk["choices"][0].get("delta", {})

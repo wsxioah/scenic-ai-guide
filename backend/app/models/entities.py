@@ -33,6 +33,7 @@ class ScenicSpot(Base):
     level: Mapped[str | None] = mapped_column(String(10))  # 5A/4A等
     pv: Mapped[int] = mapped_column(Integer, default=0)
     score: Mapped[float] = mapped_column(Float, default=0)
+    map_bounds: Mapped[str | None] = mapped_column(Text)  # JSON: {north,south,east,west,min_zoom,max_zoom}
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
     knowledge_points = relationship("KnowledgePoint", back_populates="scenic_spot")
@@ -126,3 +127,43 @@ class DigitalHumanConfig(Base):
     pitch: Mapped[float] = mapped_column(Float, default=1.0)
     greeting_message: Mapped[str] = mapped_column(String(500), default="您好！我是景区AI导览助手，请问有什么可以帮您的？")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class PoiLocation(Base):
+    """POI位置点 — 厕所、餐饮、停车场等设施"""
+    __tablename__ = "poi_locations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    category: Mapped[str] = mapped_column(String(50), index=True)  # toilet/food/parking/shop/scenic/station/service/entrance
+    description: Mapped[str | None] = mapped_column(Text)
+    address: Mapped[str | None] = mapped_column(String(512))
+    lat: Mapped[float] = mapped_column(Float)
+    lng: Mapped[float] = mapped_column(Float)
+    phone: Mapped[str | None] = mapped_column(String(50))
+    opening_hours: Mapped[str | None] = mapped_column(String(200))
+    icon: Mapped[str | None] = mapped_column(String(100))  # emoji or predefined key
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+
+
+class LostAlert(Base):
+    """走丢/失物报警"""
+    __tablename__ = "lost_alerts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(20), index=True)  # lost_child / lost_item
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending/approved/rejected/resolved
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text)
+    contact_phone: Mapped[str | None] = mapped_column(String(50))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lng: Mapped[float | None] = mapped_column(Float)
+    scenic_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    broadcast_count: Mapped[int] = mapped_column(Integer, default=0)
+    broadcast_completed: Mapped[bool] = mapped_column(Boolean, default=False)
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    resolved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    extra_metadata: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)

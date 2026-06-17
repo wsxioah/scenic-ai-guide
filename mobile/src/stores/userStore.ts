@@ -8,7 +8,7 @@ interface UserState {
   isLoggedIn: boolean;
   login: (id: number, phone: string, nickname: string, avatar?: string) => void;
   logout: () => void;
-  setProfile: (data: Partial<UserState>) => void;
+  setProfile: (data: Partial<Omit<UserState, 'login' | 'logout' | 'setProfile'>>) => void;
 }
 
 export const useUserStore = create<UserState>((set) => ({

@@ -51,6 +51,12 @@ class ApiClient {
     return this.request<any[]>(`/api/scenic/nearby?lat=${lat}&lng=${lng}&radius=${radius}`);
   }
 
+  async getNearbyPois(lat: number, lng: number, radiusKm: number = 2, category?: string) {
+    let url = `/api/poi/nearby?lat=${lat}&lng=${lng}&radius_km=${radiusKm}`;
+    if (category) url += `&category=${category}`;
+    return this.request<{ pois: any[]; center: any }>(url);
+  }
+
   async getRoutes() {
     return this.request<any[]>(`/api/scenic/routes`);
   }

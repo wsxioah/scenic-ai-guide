@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import api from '../services/api';
+import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
 
 interface RecognizeResult {
   is_scenic: boolean;
@@ -71,7 +72,7 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
   };
 
   const goToSpot = () => {
-    if (result?.lat && result?.lng) {
+    if (result?.lat != null && result?.lng != null) {
       onSpotRecognized({
         name: result.spot_name, lat: result.lat, lng: result.lng,
         desc: result.description, category: result.category,
@@ -93,32 +94,31 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
 
         {/* Content */}
         <View style={styles.content}>
-          {/* Photo preview or placeholder */}
           {photoUri ? (
             <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" />
           ) : (
             <View style={styles.placeholder}>
-              <Text style={styles.placeholderIcon}>📷</Text>
+              <View style={styles.placeholderRing}>
+                <Text style={styles.placeholderIcon}>📷</Text>
+              </View>
               <Text style={styles.placeholderText}>拍摄景点照片{'\n'}自动识别景区位置</Text>
             </View>
           )}
 
-          {/* Recognizing spinner */}
           {recognizing && (
             <View style={styles.recognizingOverlay}>
-              <ActivityIndicator size="large" color="#2563EB" />
+              <ActivityIndicator size="large" color={Colors.goldLight} />
               <Text style={styles.recognizingText}>AI 识别中...</Text>
             </View>
           )}
 
-          {/* Error */}
           {error ? (
             <View style={styles.errorBox}>
               <Text style={styles.errorText}>{error}</Text>
             </View>
           ) : null}
 
-          {/* Result: Non-scenic */}
+          {/* Non-scenic result */}
           {result && !recognizing && !result.is_scenic && (
             <View style={styles.nonScenicCard}>
               <View style={styles.nonScenicHeader}>
@@ -140,7 +140,7 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
             </View>
           )}
 
-          {/* Result: Scenic spot */}
+          {/* Scenic spot result */}
           {result && !recognizing && result.is_scenic && (
             <View style={styles.resultCard}>
               <View style={styles.resultHeader}>
@@ -152,7 +152,11 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
                 </View>
               </View>
               {result.category && (
-                <Text style={styles.resultCategory}>{result.category}类景点</Text>
+                <View style={styles.resultCategoryRow}>
+                  <View style={styles.categoryChip}>
+                    <Text style={styles.categoryChipText}>{result.category}</Text>
+                  </View>
+                </View>
               )}
               {result.description && (
                 <Text style={styles.resultDesc}>{result.description}</Text>
@@ -167,7 +171,7 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
           )}
         </View>
 
-        {/* Bottom actions */}
+        {/* Bottom bar */}
         {!recognizing && (
           <View style={styles.bottomBar}>
             <TouchableOpacity style={styles.captureBtn} onPress={takePhoto}>
@@ -186,85 +190,117 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  container: { flex: 1, backgroundColor: Colors.paper },
+
+  // Header
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    paddingBottom: 12, paddingHorizontal: 16,
-    backgroundColor: '#FFFFFF', borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB',
+    paddingBottom: 12, paddingHorizontal: Spacing.lg,
+    backgroundColor: Colors.white, borderBottomWidth: 0.5, borderBottomColor: Colors.divider,
   },
-  title: { fontSize: 17, fontWeight: '700', color: '#1F2937' },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center' },
-  closeBtnText: { fontSize: 14, color: '#6B7280' },
-  content: { flex: 1, alignItems: 'center', paddingHorizontal: 20, paddingTop: 16 },
+  title: { fontSize: 17, fontWeight: '700', color: Colors.ink },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: Colors.surface, alignItems: 'center', justifyContent: 'center',
+  },
+  closeBtnText: { fontSize: 14, color: Colors.textSecondary },
+
+  // Content
+  content: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg },
+
+  // Placeholder
   placeholder: {
-    width: '100%', height: 280, borderRadius: 16,
-    backgroundColor: '#EFF6FF', borderWidth: 2, borderColor: '#BFDBFE',
+    width: '100%', height: 280, borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.goldSurface,
+    borderWidth: 2, borderColor: Colors.goldLight,
     borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center',
   },
-  placeholderIcon: { fontSize: 48, marginBottom: 12 },
-  placeholderText: { color: '#6B7280', fontSize: 14, textAlign: 'center', lineHeight: 22 },
-  preview: { width: '100%', height: 280, borderRadius: 16, backgroundColor: '#E5E7EB' },
+  placeholderRing: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: Colors.white,
+    alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.md,
+    borderWidth: 1, borderColor: Colors.goldLight,
+  },
+  placeholderIcon: { fontSize: 36 },
+  placeholderText: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22 },
+  preview: { width: '100%', height: 280, borderRadius: BorderRadius.lg, backgroundColor: Colors.divider },
+
+  // Recognizing overlay
   recognizingOverlay: {
-    position: 'absolute', top: 16, left: 20, right: 20,
-    height: 280, borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center',
+    position: 'absolute', top: Spacing.lg, left: Spacing.xl, right: Spacing.xl,
+    height: 280, borderRadius: BorderRadius.lg,
+    backgroundColor: 'rgba(44,24,16,0.7)', alignItems: 'center', justifyContent: 'center',
   },
   recognizingText: { color: '#FFFFFF', marginTop: 12, fontSize: 15, fontWeight: '600' },
+
+  // Error
   errorBox: {
-    marginTop: 12, width: '100%', padding: 12, borderRadius: 8,
-    backgroundColor: '#FEF2F2', borderWidth: 0.5, borderColor: '#FECACA',
+    marginTop: Spacing.md, width: '100%', padding: Spacing.md, borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.vermilionLight, borderWidth: 0.5, borderColor: Colors.vermilionLight,
   },
-  errorText: { color: '#991B1B', fontSize: 13 },
-  // Non-scenic result
+  errorText: { color: Colors.vermilion, fontSize: 13 },
+
+  // Non-scenic
   nonScenicCard: {
-    marginTop: 16, width: '100%', backgroundColor: '#FFFBEB',
-    borderRadius: 12, padding: 20, borderWidth: 1, borderColor: '#FCD34D',
-    alignItems: 'center',
-    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 4,
+    marginTop: Spacing.lg, width: '100%',
+    backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
+    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.goldLight,
+    alignItems: 'center', ...Shadows.md,
   },
-  nonScenicHeader: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8,
-  },
+  nonScenicHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md, gap: 8 },
   nonScenicIcon: { fontSize: 28 },
-  nonScenicTitle: { fontSize: 17, fontWeight: '700', color: '#92400E' },
-  nonScenicDesc: { color: '#78350F', fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 12 },
-  nonScenicHint: { color: '#A16207', fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  nonScenicTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink },
+  nonScenicDesc: { color: Colors.textSecondary, fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: Spacing.md },
+  nonScenicHint: { color: Colors.goldDark, fontSize: 12, textAlign: 'center', lineHeight: 18 },
+
   // Scenic result
   resultCard: {
-    marginTop: 16, width: '100%', backgroundColor: '#FFFFFF',
-    borderRadius: 12, padding: 16,
-    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08, shadowRadius: 4,
+    marginTop: Spacing.lg, width: '100%',
+    backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
+    padding: Spacing.xl, ...Shadows.md,
   },
-  resultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  resultName: { fontSize: 18, fontWeight: '700', color: '#1F2937' },
+  resultHeader: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: Spacing.sm,
+  },
+  resultName: { fontSize: 18, fontWeight: '700', color: Colors.ink, flex: 1 },
   confidenceBadge: {
-    backgroundColor: '#D1FAE5', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12,
+    backgroundColor: Colors.jadeLight, paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: BorderRadius.full,
   },
-  confidenceText: { color: '#065F46', fontSize: 12, fontWeight: '600' },
-  resultCategory: { color: '#6B7280', fontSize: 13, marginBottom: 8 },
-  resultDesc: { color: '#4B5563', fontSize: 13, lineHeight: 20, marginBottom: 8 },
-  aiDesc: { color: '#6366F1', fontSize: 12, lineHeight: 18, marginBottom: 14, fontStyle: 'italic' },
+  confidenceText: { color: Colors.jade, fontSize: 12, fontWeight: '600' },
+  resultCategoryRow: { marginBottom: Spacing.sm },
+  categoryChip: {
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.lapisLight,
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: BorderRadius.sm,
+  },
+  categoryChipText: { color: Colors.lapis, fontSize: 12, fontWeight: '600' },
+  resultDesc: { color: Colors.text, fontSize: 14, lineHeight: 22, marginBottom: Spacing.sm },
+  aiDesc: { color: Colors.goldDark, fontSize: 12, lineHeight: 18, marginBottom: Spacing.lg, fontStyle: 'italic' },
   locateBtn: {
-    backgroundColor: '#2563EB', borderRadius: 8, paddingVertical: 12,
-    alignItems: 'center',
+    backgroundColor: Colors.goldDark, borderRadius: BorderRadius.md,
+    paddingVertical: 12, alignItems: 'center',
   },
   locateBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+
+  // Bottom
   bottomBar: {
-    paddingHorizontal: 20, paddingVertical: 16, paddingBottom: Platform.OS === 'ios' ? 32 : 16,
-    backgroundColor: '#FFFFFF', borderTopWidth: 0.5, borderTopColor: '#E5E7EB',
+    paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+    backgroundColor: Colors.white, borderTopWidth: 0.5, borderTopColor: Colors.divider,
     flexDirection: 'row', gap: 12,
   },
   captureBtn: {
-    flex: 1, backgroundColor: '#2563EB', borderRadius: 10,
+    flex: 1, backgroundColor: Colors.goldDark, borderRadius: BorderRadius.md,
     paddingVertical: 14, alignItems: 'center',
   },
   captureBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
   retryBtn: {
-    paddingHorizontal: 20, borderRadius: 10, paddingVertical: 14,
-    backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md,
+    paddingVertical: 14, backgroundColor: Colors.surface,
+    alignItems: 'center', justifyContent: 'center',
   },
-  retryBtnText: { color: '#6B7280', fontSize: 14, fontWeight: '600' },
+  retryBtnText: { color: Colors.textSecondary, fontSize: 14, fontWeight: '600' },
 });

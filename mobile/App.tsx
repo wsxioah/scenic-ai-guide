@@ -9,6 +9,7 @@ import ScenicListScreen from './src/screens/ScenicListScreen';
 import ScenicDetailScreen from './src/screens/ScenicDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
+import LostReportScreen from './src/screens/LostReportScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -79,6 +80,11 @@ export default function App() {
           name="Community"
           component={CommunityScreen}
           options={{ headerTitle: '评论区', headerTintColor: '#2563EB' }}
+        />
+        <Stack.Screen
+          name="LostReport"
+          component={LostReportScreen}
+          options={{ headerTitle: '紧急求助', headerTintColor: '#DC2626' }}
         />
       </Stack.Navigator>
     </NavigationContainer>
