@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  Alert, Linking, StatusBar,
+  StatusBar,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import api from '../services/api';
@@ -30,16 +30,6 @@ export default function ScenicDetailScreen() {
       if (spotData.status === 'fulfilled') setSpot(spotData.value);
       if (commentsData.status === 'fulfilled') setComments(commentsData.value || []);
     } catch {}
-  };
-
-  const navigateToSpot = () => {
-    if (spot) {
-      Linking.openURL(
-        `https://uri.amap.com/navigation?to=${spot.lng},${spot.lat},${spot.name}&mode=walk&callnative=1`
-      ).catch(() => {
-        Alert.alert('提示', '请安装高德地图后使用导航功能');
-      });
-    }
   };
 
   const askAI = () => {
@@ -118,12 +108,6 @@ export default function ScenicDetailScreen() {
 
         {/* Action buttons */}
         <View style={styles.actions}>
-          <TouchableOpacity style={styles.actionBtn} onPress={navigateToSpot}>
-            <View style={styles.actionIconWrap}>
-              <Text style={styles.actionIcon}>🧭</Text>
-            </View>
-            <Text style={styles.actionLabel}>导航前往</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={askAI}>
             <View style={[styles.actionIconWrap, styles.actionIconWrapPrimary]}>
               <Text style={styles.actionIcon}>🤖</Text>

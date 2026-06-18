@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>查找坐标</title>
+</head>
+<body>
+<pre id="out">搜索中...</pre>
+<script>
+var out = document.getElementById('out');
+var AK = '9b3nqAd0qh8TvwOl2ubfa3QWv9LJggRL';
+var places = ['灵山胜境九龙灌浴', '灵山大佛', '灵山梵宫', '灵山大照壁', '五印坛城', '祥符禅寺', '百子戏弥勒', '阿育王柱', '降魔浮雕', '菩提大道', '五智门', '佛足坛', '五明桥', '曼飞龙塔', '无尽意斋', '佛教文化博览馆'];
+var results = [];
+
+function searchNext(i) {
+  if (i >= places.length) {
+    out.innerText = results.join('\n');
+    return;
+  }
+  var s = document.createElement('script');
+  var cb = 'cb' + i;
+  window[cb] = function(data) {
+    if (data.results && data.results.length > 0) {
+      var r = data.results[0];
+      results.push(r.name + ' | BD09 lat:' + r.lat.toFixed(6) + ' lng:' + r.lng.toFixed(6) + ' | ' + r.address);
+    } else {
+      results.push(places[i] + ' | NOT FOUND');
+    }
+    out.innerText = results.join('\n');
+    searchNext(i + 1);
+  };
+  s.src = 'https://api.map.baidu.com/place/v2/search?query=' + encodeURIComponent(places[i]) + '&region=无锡&output=json&ak=' + AK + '&callback=' + cb;
+  document.body.appendChild(s);
+}
+
+searchNext(0);
+</script>
+</body>
+</html>

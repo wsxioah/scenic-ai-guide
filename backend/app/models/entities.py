@@ -148,22 +148,4 @@ class PoiLocation(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
 
-class LostAlert(Base):
-    """走丢/失物报警"""
-    __tablename__ = "lost_alerts"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    type: Mapped[str] = mapped_column(String(20), index=True)  # lost_child / lost_item
-    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending/approved/rejected/resolved
-    name: Mapped[str] = mapped_column(String(100))
-    description: Mapped[str | None] = mapped_column(Text)
-    contact_phone: Mapped[str | None] = mapped_column(String(50))
-    lat: Mapped[float | None] = mapped_column(Float)
-    lng: Mapped[float | None] = mapped_column(Float)
-    scenic_id: Mapped[int | None] = mapped_column(Integer, index=True)
-    broadcast_count: Mapped[int] = mapped_column(Integer, default=0)
-    broadcast_completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
-    resolved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
-    extra_metadata: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e}
+#map{width:100%;height:100%}
+</style>
+</head>
+<body>
+<div id="map" style="color:#9ca3af;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">地图加载中...</div>
+<div id="msg-debug" style="position:absolute;bottom:8px;left:8px;color:#22c55e;background:rgba(0,0,0,0.8);padding:4px 8px;border-radius:4px;font-family:monospace;font-size:10px;z-index:9999;pointer-events:none">等待消息...</div>
+<script>
+window.onerror=function(m,s,l,c,e){try{window.ReactNativeWebView.postMessage(JSON.stringify({type:"error",message:String(m),line:l}))}catch(e2){}};
+
+var _map=null,_userMarker=null;
+
+function makeUserIcon(){var svg='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#3B82F6" stroke="#fff" stroke-width="3"/><circle cx="12" cy="12" r="4" fill="#fff"/></svg>';return "data:image/svg+xml;base64,"+btoa(svg)}
+
+function wgs84ToBd09(lng,lat){var PI=Math.PI,X_PI=PI*3000/180,A=6378245,EE=0.006693421622965943;function tlat(x,y){var r=-100+2*x+3*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*PI)+20*Math.sin(2*x*PI))*2/3;r+=(20*Math.sin(y*PI)+40*Math.sin(y/3*PI))*2/3;r+=(160*Math.sin(y/12*PI)+320*Math.sin(y*PI/30))*2/3;return r}function tlng(x,y){var r=300+x+2*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*PI)+20*Math.sin(2*x*PI))*2/3;r+=(20*Math.sin(x*PI)+40*Math.sin(x/3*PI))*2/3;r+=(150*Math.sin(x/12*PI)+300*Math.sin(x/30*PI))*2/3;return r}var dl=tlat(lng-105,lat-35),dn=tlng(lng-105,lat-35),r=lat/180*PI,m=Math.sin(r);m=1-EE*m*m;var s=Math.sqrt(m);dl=dl*180/((A*(1-EE))/(m*s)*PI);dn=dn*180/(A/s*Math.cos(r)*PI);var gl=lng+dn,gt=lat+dl,z=Math.sqrt(gl*gl+gt*gt)+0.00002*Math.sin(gt*X_PI),th=Math.atan2(gt,gl)+0.000003*Math.cos(gl*X_PI);return[z*Math.cos(th)+0.0065,z*Math.sin(th)+0.006]}
+
+function initMap(){try{_map=new BMapGL.Map("map");_map.centerAndZoom(new BMapGL.Point(120.101375,31.424900),16);_map.setTilt(45);_map.enableScrollWheelZoom(true);try{_map.setMapStyle({style:"dark"})}catch(e){};updateDebug("mapReady(SENT)");window.ReactNativeWebView.postMessage(JSON.stringify({type:"mapReady"}))}catch(e){window.ReactNativeWebView.postMessage(JSON.stringify({type:"error",message:"initMap:"+String(e)}));document.getElementById("map").innerHTML='<div style="color:#f87171;text-align:center;padding-top:60%;font-family:sans-serif">初始化失败:'+String(e)+"</div>"}}
+
+function setUserLocation(lat,lng){
+  if(_userMarker){try{_map.removeOverlay(_userMarker)}catch(e){}}
+  try{
+    var bd=wgs84ToBd09(lng,lat);
+    var pt=new BMapGL.Point(bd[0],bd[1]);
+    var icon=new BMapGL.Icon(makeUserIcon(),new BMapGL.Size(24,24),{anchor:new BMapGL.Size(12,12),imageSize:new BMapGL.Size(24,24)});
+    _userMarker=new BMapGL.Marker(pt,{icon:icon});
+    _map.addOverlay(_userMarker);
+    updateDebug("GPS→BD09:"+bd[1].toFixed(6)+","+bd[0].toFixed(6));
+  }catch(e){updateDebug("GPSerr:"+e)}
+}
+
+function centerOn(lat,lng){try{_map.centerAndZoom(new BMapGL.Point(lng,lat),18)}catch(e){}}
+function centerOnUser(){try{if(_userMarker){_map.centerAndZoom(_userMarker.getPosition(),18);updateDebug("centered on user")}else{updateDebug("no user marker")}}catch(e){}}
+
+function updateDebug(msg){
+  try{document.getElementById("msg-debug").innerHTML=msg}catch(e){}
+}
+
+document.addEventListener("message",function(e){
+  try{
+    var d=JSON.parse(e.data);
+    updateDebug("rx:"+d.type);
+    if(d.type==="setUserLocation") setUserLocation(d.lat,d.lng);
+    else if(d.type==="centerOn") centerOn(d.lat,d.lng);
+    else if(d.type==="centerOnUser") centerOnUser();
+  }catch(ex){
+    updateDebug("parse_err:"+ex);
+  }
+});
+
+var _el=document.getElementById("map");
+updateDebug("JS已启动");
+_el.innerHTML='<div style="color:#f59e0b;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">JS已启动<br/><span style="font-size:11px;color:#9ca3af">加载百度地图SDK...</span></div>';
+
+var _t0=Date.now(),_n=0,_done=false;
+var _poll=setInterval(function(){
+  _n++;
+  if(typeof BMapGL!=="undefined"){
+    if(_done)return;_done=true;clearInterval(_poll);
+    _el.innerHTML='<div style="color:#22c55e;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">SDK就绪<br/><span style="font-size:11px;color:#9ca3af">初始化地图...</span></div>';
+    setTimeout(initMap,10)
+  }else if(_n%20===0){
+    _el.innerHTML='<div style="color:#f59e0b;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">等待SDK '+Math.round((Date.now()-_t0)/1000)+'s<br/><span style="font-size:11px;color:#9ca3af">BMapGL:'+(typeof BMapGL)+'</span></div>'
+  }
+},80);
+
+setTimeout(function(){
+  if(!_done&&typeof BMapGL==="undefined"){
+    _done=true;clearInterval(_poll);
+    _el.innerHTML='<div style="color:#f87171;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">地图加载失败<br/><span style="font-size:11px;color:#9ca3af">BMapGL未加载('+Math.round((Date.now()-_t0)/1000)+'s)</span></div>'
+  }
+},15000);
+</script>
+<script src="https://api.map.baidu.com/api?type=webgl&v=1.0&ak=9b3nqAd0qh8TvwOl2ubfa3QWv9LJggRL"></script>
+</body>
+</html>

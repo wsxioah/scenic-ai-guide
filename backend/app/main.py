@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.models.database import engine, Base
-from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi, alerts
+from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi
+from fastapi.responses import HTMLResponse
 
 
 @asynccontextmanager
@@ -37,8 +38,7 @@ app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"]
 app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
 app.include_router(digital_human.router, tags=["数字人"])
 app.include_router(poi.router, prefix="/api/poi", tags=["POI"])
-app.include_router(alerts.public_router, prefix="/api/alerts", tags=["报警"])
-app.include_router(alerts.router, prefix="/api/admin/alerts", tags=["管理-报警"])
+
 
 # Static files
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "static")
@@ -54,3 +54,10 @@ app.mount("/static/audio", StaticFiles(directory=AUDIO_STATIC_DIR), name="audio_
 @app.get("/")
 async def root():
     return {"name": settings.app_name, "status": "running"}
+
+
+@app.get("/map", response_class=HTMLResponse)
+async def map_page():
+    map_path = os.path.join(os.path.dirname(__file__), "..", "..", "tools", "map_inline_test.html")
+    with open(map_path, encoding="utf-8") as f:
+        return f.read()

@@ -71,13 +71,11 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
     setRecognizing(false);
   };
 
-  const goToSpot = () => {
-    if (result?.lat != null && result?.lng != null) {
-      onSpotRecognized({
-        name: result.spot_name, lat: result.lat, lng: result.lng,
-        desc: result.description, category: result.category,
-      });
-    }
+  const askAI = () => {
+    onSpotRecognized({
+      name: result!.spot_name, lat: result!.lat ?? 0, lng: result!.lng ?? 0,
+      desc: result!.description, category: result!.category,
+    });
     handleClose();
   };
 
@@ -164,8 +162,8 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
               {result.ai_description && (
                 <Text style={styles.aiDesc}>AI分析：{result.ai_description}</Text>
               )}
-              <TouchableOpacity style={styles.locateBtn} onPress={goToSpot}>
-                <Text style={styles.locateBtnText}>📍 在地图上定位</Text>
+              <TouchableOpacity style={styles.locateBtn} onPress={askAI}>
+                <Text style={styles.locateBtnText}>🤖 AI 讲解</Text>
               </TouchableOpacity>
             </View>
           )}

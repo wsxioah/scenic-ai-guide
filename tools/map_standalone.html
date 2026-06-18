@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e}
+#map{width:100%;height:100%}
+.info-window{font-family:sans-serif;padding:4px 0}
+.info-window h4{margin:0 0 2px;font-size:14px;color:#1F2937}
+.info-window p{margin:2px 0;font-size:11px;color:#6B7280}
+.info-window .nav-btn{display:inline-block;margin-top:4px;padding:5px 14px;background:#2563EB;color:#fff;border-radius:4px;font-size:12px;cursor:pointer;text-decoration:none;font-weight:600}
+</style>
+</head>
+<body>
+<div id="map" style="color:#9ca3af;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">地图加载中...</div>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  document.getElementById('map').innerHTML += '<div style="color:red;font-size:11px;padding:4px">ERROR: '+msg+' (line '+line+')</div>';
+};
+
+var _map = null;
+var _userMarker = null;
+var _spotMarkers = [];
+var _facMarkers = [];
+
+function makeIcon(color, shape) {
+  var svg = shape === 'pin'
+    ? '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="42" viewBox="0 0 28 42"><filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter><path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 28 14 28s14-17.5 14-28C28 6.3 21.7 0 14 0z" fill="' + color + '" filter="url(#s)"/><circle cx="14" cy="14" r="6" fill="#fff"/></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="' + color + '" stroke="#fff" stroke-width="2"/><rect x="6" y="6" width="10" height="10" fill="#fff" opacity="0.35" rx="2"/></svg>';
+  return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+
+var FAC_COLORS = { entrance:'#3B82F6', restroom:'#EC4899', parking:'#F59E0B', service:'#10B981', food:'#F97316' };
+
+function initMap() {
+  _map = new BMapGL.Map('map');
+  _map.centerAndZoom(new BMapGL.Point(120.101375, 31.424900), 16);
+  _map.setTilt(45);
+  _map.enableScrollWheelZoom(true);
+  try { _map.setMapStyle({ style: 'dark' }); } catch(e) {}
+  document.getElementById('map').innerHTML = '';
+  alert('MAP READY - 点击确定开始加载标记');
+
+  // Test: add a marker at center
+  var pt = new BMapGL.Point(120.101375, 31.424900);
+  var icon = new BMapGL.Icon(makeIcon('#f59e0b','pin'), new BMapGL.Size(28,42), { anchor: new BMapGL.Size(14,42), imageSize: new BMapGL.Size(28,42) });
+  var marker = new BMapGL.Marker(pt, { icon: icon });
+  _map.addOverlay(marker);
+  var label = new BMapGL.Label('太子像(基准)', { position: pt, offset: new BMapGL.Size(-20, -38) });
+  label.setStyle({ color:'#fff', background:'rgba(0,0,0,0.8)', border:'none', borderRadius:'3px', padding:'2px 6px', fontSize:'11px', fontFamily:'sans-serif', whiteSpace:'nowrap' });
+  _map.addOverlay(label);
+}
+
+var _poll = setInterval(function() {
+  if (typeof BMapGL !== 'undefined') { clearInterval(_poll); initMap(); }
+}, 80);
+
+setTimeout(function() {
+  if (typeof BMapGL === 'undefined') {
+    clearInterval(_poll);
+    document.getElementById('map').innerHTML = '<div style="color:#f87171;text-align:center;padding-top:60%">地图加载失败 - BMapGL未定义</div>';
+  }
+}, 15000);
+</script>
+<script src="https://api.map.baidu.com/api?type=webgl&v=1.0&ak=9b3nqAd0qh8TvwOl2ubfa3QWv9LJggRL"></script>
+</body>
+</html>

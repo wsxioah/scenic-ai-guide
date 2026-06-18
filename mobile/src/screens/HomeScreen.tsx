@@ -87,10 +87,9 @@ export default function HomeScreen() {
         <Text style={styles.sectionLabel}>快捷服务</Text>
         <View style={styles.quickGrid}>
           {[
-            { label: '景区地图', icon: '🗺️', screen: 'Map', desc: '探索全景' },
             { label: '景点列表', icon: '🏛', screen: 'Scenic', desc: '浏览名胜' },
+            { label: '景区地图', icon: '🗺️', screen: 'Map', desc: '导览导航' },
             { label: '拍照识景', icon: '📷', screen: 'Chat', desc: '一键识别' },
-            { label: '寻人寻物', icon: '🔍', screen: 'LostReport', desc: '紧急求助' },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}

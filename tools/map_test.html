@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e}
+#map{width:100%;height:100%}
+.info-window{font-family:-apple-system,sans-serif;padding:2px 0}
+.info-window h4{margin:0 0 2px;font-size:14px;color:#1F2937}
+.info-window p{margin:2px 0;font-size:11px;color:#6B7280}
+.info-window .nav-btn{display:inline-block;margin-top:4px;padding:5px 14px;background:#2563EB;color:#fff;border-radius:4px;font-size:12px;cursor:pointer;text-decoration:none;font-weight:600}
+</style>
+</head>
+<body>
+<div id="map" style="color:#9ca3af;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">地图加载中...</div>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: String(msg), line: line, col: col })); } catch(e) {}
+};
+
+var _map = null;
+var _userMarker = null;
+var _spotMarkers = [];
+var _facMarkers = [];
+
+function makeIcon(color, shape) {
+  var svg = shape === 'pin'
+    ? '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="42" viewBox="0 0 28 42"><filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter><path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 28 14 28s14-17.5 14-28C28 6.3 21.7 0 14 0z" fill="' + color + '" filter="url(#s)"/><circle cx="14" cy="14" r="6" fill="#fff"/></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="' + color + '" stroke="#fff" stroke-width="2"/><rect x="6" y="6" width="10" height="10" fill="#fff" opacity="0.35" rx="2"/></svg>';
+  return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+
+function makeUserIcon() {
+  var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#3B82F6" stroke="#fff" stroke-width="3"/><circle cx="12" cy="12" r="4" fill="#fff"/></svg>';
+  return 'data:image/svg+xml;base64,' + btoa(svg);
+}
+
+var FAC_COLORS = { entrance:'#3B82F6', restroom:'#EC4899', parking:'#F59E0B', service:'#10B981', food:'#F97316' };
+
+function initMap() {
+  try {
+    _map = new BMapGL.Map('map');
+    _map.centerAndZoom(new BMapGL.Point(120.101375, 31.424900), 16);
+    _map.setTilt(45);
+    _map.enableScrollWheelZoom(true);
+    _map.enableContinuousZoom(true);
+    _map.enableDoubleClickZoom(true);
+    _map.enableDragging();
+    _map.enableInertialDragging();
+    try { _map.setMapStyle({ style: 'dark' }); } catch(e) {}
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mapReady' }));
+  } catch(e) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: 'initMap:'+String(e) }));
+    document.getElementById('map').innerHTML = '<div style="color:#f87171;text-align:center;padding-top:60%;font-family:sans-serif">初始化失败:'+String(e)+'</div>';
+  }
+}
+
+function setSpots(spots) {
+  _spotMarkers.forEach(function(m) { try { _map.removeOverlay(m); } catch(e) {} });
+  _spotMarkers = [];
+  if (!spots || !spots.length) return;
+  spots.forEach(function(s) {
+    var pt = new BMapGL.Point(s.lng, s.lat);
+    var color = s.category === '自然' ? '#22c55e' : s.category === '人文' ? '#f59e0b' : s.category === '宗教' ? '#a855f7' : '#6b7280';
+    try {
+      var icon = new BMapGL.Icon(makeIcon(color,'pin'), new BMapGL.Size(28,42), { anchor: new BMapGL.Size(14,42), imageSize: new BMapGL.Size(28,42) });
+      var marker = new BMapGL.Marker(pt, { icon: icon });
+      marker._spot = s;
+      marker.addEventListener('click', function() { showSpotInfo(this); });
+      _map.addOverlay(marker);
+      _spotMarkers.push(marker);
+    } catch(e) {}
+    try {
+      var label = new BMapGL.Label(s.name, { position: pt, offset: new BMapGL.Size(-16, -38) });
+      label.setStyle({ color:'#fff', background:'rgba(0,0,0,0.75)', border:'none', borderRadius:'3px', padding:'2px 6px', fontSize:'10px', fontFamily:'sans-serif', whiteSpace:'nowrap', pointerEvents:'none' });
+      _map.addOverlay(label);
+      _spotMarkers.push(label);
+    } catch(e) {}
+  });
+}
+
+function setFacilities(facilities) {
+  _facMarkers.forEach(function(m) { try { _map.removeOverlay(m); } catch(e) {} });
+  _facMarkers = [];
+  if (!facilities || !facilities.length) return;
+  facilities.forEach(function(f) {
+    var pt = new BMapGL.Point(f.lng, f.lat);
+    var color = FAC_COLORS[f.kind] || '#6B7280';
+    try {
+      var icon = new BMapGL.Icon(makeIcon(color,'dot'), new BMapGL.Size(22,22), { anchor: new BMapGL.Size(11,11), imageSize: new BMapGL.Size(22,22) });
+      var marker = new BMapGL.Marker(pt, { icon: icon });
+      marker._fac = f;
+      marker.addEventListener('click', function() {
+        try { var w = new BMapGL.InfoWindow('<div class="info-window"><h4>'+this._fac.name+'</h4></div>', { width:140, height:36 }); _map.openInfoWindow(w, this.getPosition()); } catch(e) {}
+      });
+      _map.addOverlay(marker);
+      _facMarkers.push(marker);
+    } catch(e) {}
+  });
+}
+
+function setUserLocation(lat, lng) {
+  if (_userMarker) { try { _map.removeOverlay(_userMarker); } catch(e) {} }
+  try {
+    var pt = new BMapGL.Point(lng, lat);
+    var icon = new BMapGL.Icon(makeUserIcon(), new BMapGL.Size(24,24), { anchor: new BMapGL.Size(12,12), imageSize: new BMapGL.Size(24,24) });
+    _userMarker = new BMapGL.Marker(pt, { icon: icon });
+    _map.addOverlay(_userMarker);
+  } catch(e) {}
+}
+
+function centerOn(lat, lng) {
+  try { _map.centerAndZoom(new BMapGL.Point(lng, lat), 18); } catch(e) {}
+}
+
+function showSpotInfo(marker) {
+  try {
+    var s = marker._spot;
+    var html = '<div class="info-window"><h4>'+s.name+'</h4><p>'+(s.category||'')+'</p><span class="nav-btn" onclick="navTo('+s.lat+','+s.lng+',\x27'+(s.name||'').replace(/'/g,"\\\\'")+'\x27)">导航到这里</span></div>';
+    var w = new BMapGL.InfoWindow(html, { width:160, height:82 });
+    _map.openInfoWindow(w, marker.getPosition());
+  } catch(e) {}
+}
+
+function navTo(lat, lng, name) {
+  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'navigate', lat: lat, lng: lng, name: name }));
+}
+
+window.addEventListener('message', function(e) {
+  try {
+    var d = JSON.parse(e.data);
+    if (d.type === 'setSpots') setSpots(d.spots);
+    else if (d.type === 'setFacilities') setFacilities(d.facilities);
+    else if (d.type === 'setUserLocation') setUserLocation(d.lat, d.lng);
+    else if (d.type === 'centerOn') centerOn(d.lat, d.lng);
+  } catch(ex) {}
+});
+
+var _poll = setInterval(function() {
+  if (typeof BMapGL !== 'undefined') { clearInterval(_poll); initMap(); }
+}, 80);
+
+setTimeout(function() {
+  if (typeof BMapGL === 'undefined') {
+    clearInterval(_poll);
+    document.getElementById('map').innerHTML = '<div style="color:#f87171;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">地图加载失败<br/><span style="font-size:11px;color:#9ca3af">BMapGL未加载</span></div>';
+  }
+}, 15000);
+</script>
+<script src="https://api.map.baidu.com/api?type=webgl&v=1.0&ak=9b3nqAd0qh8TvwOl2ubfa3QWv9LJggRL"></script>
+</body>
+</html>
