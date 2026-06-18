@@ -19,6 +19,9 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.scenic.ai.guide"
     },
+    "plugins": [
+      "@maplibre/maplibre-react-native"
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     }
