@@ -143,7 +143,16 @@ export default function MapScreen() {
           return;
         }
 
-        // Start watch first — it survives even if getCurrentPosition fails
+        // 1. Use cached position immediately for speed
+        try {
+          const last = await Location.getLastKnownPositionAsync();
+          if (last) {
+            console.log('[GPS] last known:', last.coords.latitude, last.coords.longitude);
+            setUserLoc({ lat: last.coords.latitude, lng: last.coords.longitude });
+          }
+        } catch {}
+
+        // 2. Start continuous watch
         locWatchRef.current = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 2000 },
           (newLoc) => {
@@ -153,23 +162,15 @@ export default function MapScreen() {
         );
         console.log('[GPS] watch started');
 
-        // Try to get immediate position
+        // 3. Try fresh GPS fix (may be slow but watch already running)
         try {
           const loc = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.High,
           });
-          console.log('[GPS] got position:', loc.coords.latitude, loc.coords.longitude);
+          console.log('[GPS] fresh fix:', loc.coords.latitude, loc.coords.longitude);
           setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
         } catch (posErr) {
-          console.warn('[GPS] getCurrentPosition failed, waiting for watch:', String(posErr));
-          // Try last known as fallback
-          try {
-            const last = await Location.getLastKnownPositionAsync();
-            if (last) {
-              console.log('[GPS] last known:', last.coords.latitude, last.coords.longitude);
-              setUserLoc({ lat: last.coords.latitude, lng: last.coords.longitude });
-            }
-          } catch {}
+          console.warn('[GPS] fresh fix failed, using last known or waiting for watch:', String(posErr));
         }
       } catch (e) {
         console.warn('[GPS] error:', JSON.stringify(e));

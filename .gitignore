@@ -52,3 +52,9 @@ kokoro_*.txt
 espeak-ng-data/
 espeak_data.zip
 sherpa_models/
+
+# GPT-SoVITS (local TTS engine, ~6.7GB models)
+gpt-sovits/
+
+# Temp files
+tmp/

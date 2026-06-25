@@ -19,7 +19,11 @@ let _webViewRef: WebView | null = null;
 export function avatarSendAction(action: string, extra: Record<string, any> = {}) {
   const message = JSON.stringify({ action, ...extra });
   console.log('[Avatar] sendAction:', action, 'ref:', !!_webViewRef);
-  _webViewRef?.postMessage(message);
+  if (_webViewRef) {
+    // Escape backslashes and quotes for safe JS string literal
+    const escaped = message.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    _webViewRef.injectJavaScript("window.dhHandleCommand('" + escaped + "');true;");
+  }
 }
 
 export default function AvatarWebView({ style }: AvatarWebViewProps) {

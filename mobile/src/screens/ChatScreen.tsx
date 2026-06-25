@@ -89,9 +89,7 @@ export default function ChatScreen() {
           case 'tts_chunk':
             if (data.audio_url) {
               audioQueueRef.current.push(data.audio_url);
-              if (data.chunk_index === 0 && data.chunk_total > 1) {
-                avatarSendAction('lipSync', { audioUrl: data.audio_url });
-              }
+              avatarSendAction('lipSync', { audioUrl: data.audio_url });
               if (!audioPlayingRef.current) playNextInQueue();
             }
             break;

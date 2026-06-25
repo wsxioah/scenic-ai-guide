@@ -178,7 +178,7 @@ async def websocket_digital_human(ws: WebSocket):
                     _edge_tts_stream(rest_text, second_file)
                 )
 
-            # Phase 3: Send chunks — chunk 0 first, then chunk 1
+            # Phase 3: Send chunk 0 as soon as ready, fire chunk 1 in background
             await first_tts_task
             await send({
                 "type": "tts_chunk",
@@ -188,13 +188,18 @@ async def websocket_digital_human(ws: WebSocket):
             })
 
             if second_tts_task:
-                await second_tts_task
-                await send({
-                    "type": "tts_chunk",
-                    "audio_url": f"/static/audio/{session_id}_1.mp3",
-                    "chunk_index": 1,
-                    "chunk_total": total,
-                })
+                async def send_chunk1():
+                    try:
+                        await second_tts_task
+                        await send({
+                            "type": "tts_chunk",
+                            "audio_url": f"/static/audio/{session_id}_1.mp3",
+                            "chunk_index": 1,
+                            "chunk_total": total,
+                        })
+                    except Exception:
+                        pass
+                asyncio.create_task(send_chunk1())
 
             await send({"type": "ready"})
 

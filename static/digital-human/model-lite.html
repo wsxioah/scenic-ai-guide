@@ -24,6 +24,7 @@
     <div id="live2dStage">
         <canvas id="live2dCanvas"></canvas>
         <div id="statusOverlay">加载中...</div>
+        <div id="dh-debug" style="position:absolute;top:4px;left:4px;color:#ff0;background:rgba(0,0,0,0.85);padding:3px 8px;border-radius:4px;font-family:monospace;font-size:12px;z-index:99;pointer-events:none">init...</div>
     </div>
 
     <script src="/digital-human/js/lipsync.js"></script>
@@ -96,6 +97,7 @@
         }
 
         lipSync = new LipSync();
+        dhDebug("ready");
 
         window.addEventListener("resize", function() {
             var sw = stage.clientWidth, sh = stage.clientHeight;
@@ -136,6 +138,12 @@
             }
         } catch(e) {}
     }
+
+    function dhDebug(msg) {
+        try { document.getElementById("dh-debug").textContent = msg; } catch(e) {}
+        console.log("[DH] " + msg);
+    }
+
 
     // ===== Lipsync-enhanced Audio Playback =====
     function playAudio(url) {
@@ -183,65 +191,117 @@
     }
 
     // Silent audio playback for lip-sync analysis only (RN handles audible output)
-    function playAudioForLipSync(url) {
-        if (audioElement) { audioElement.pause(); audioElement = null; }
-        if (lipSync) lipSync.stop();
+    // Uses a queue so chunks play sequentially without killing each other
+    var _lipSyncQueue = [];
+    var _lipSyncActive = false;
+    var _lipSyncSourceId = 0;  // incrementing ID to guard against stale ended events
 
-        audioElement = new Audio(url);
-        audioElement.volume = 0; // muted — RN expo-audio handles audible playback
-        audioElement.preload = "auto";
+    function _runLipSyncQueue() {
+        if (_lipSyncQueue.length === 0) {
+            _lipSyncActive = false;
+            dhDebug("online");
+            if (model && model.internalModel && model.internalModel.coreModel) {
+                model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", 0);
+            }
+            return;
+        }
+        _lipSyncActive = true;
+        var url = _lipSyncQueue.shift();
+        var mySourceId = ++_lipSyncSourceId;
 
-        // Start lip-sync in MUTED mode — analyser gets data but no audio output
-        if (lipSync && model) {
-            lipSync.start(audioElement, function(mouthOpen) {
+        dhDebug("lipsync:" + mySourceId + " fetching...");
+
+        var ctx = lipSync.audioContext || new (window.AudioContext || window.webkitAudioContext)();
+        lipSync.audioContext = ctx;
+
+        // Always resume AudioContext — Android may auto-suspend between chunks
+        var ready = (ctx.state === "suspended")
+            ? ctx.resume().catch(function(e) { dhDebug("ctx_resume_err:"+e.message); })
+            : Promise.resolve();
+        ready.then(function() {
+            return fetch(url);
+        })
+        .then(function(r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            dhDebug("lipsync:" + mySourceId + " got " + Math.round(parseInt(r.headers.get("content-length")||"0")/1024) + "kB");
+            return r.arrayBuffer();
+        })
+        .then(function(buf) {
+            dhDebug("lipsync:" + mySourceId + " decoding " + Math.round(buf.byteLength/1024) + "kB");
+            return ctx.decodeAudioData(buf);
+        })
+        .then(function(audioBuffer) {
+            // Guard: another source has started since, don't bother
+            if (_lipSyncSourceId !== mySourceId) {
+                dhDebug("lipsync:" + mySourceId + " superseded");
+                return;
+            }
+
+            dhDebug("lipsync:" + mySourceId + " playing " + audioBuffer.duration.toFixed(1) + "s");
+
+            // Stop & disconnect any previous source so its ended event won't fire
+            if (lipSync.source) {
+                try { lipSync.source.stop(); } catch(e) {}
+                try { lipSync.source.disconnect(); } catch(e) {}
+            }
+
+            var source = ctx.createBufferSource();
+            source.buffer = audioBuffer;
+            var analyser = ctx.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.4;
+            source.connect(analyser);
+
+            lipSync.source = source;
+            lipSync.analyser = analyser;
+            lipSync.isRunning = true;
+            lipSync.onMouthUpdate = function(mouthOpen) {
                 if (model && model.internalModel && model.internalModel.coreModel) {
                     var v = Math.max(0, Math.min(1, mouthOpen * 3.0));
                     model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", v);
                 }
-            }, { muted: true });
-        }
+            };
+            lipSync._loop();
 
-        function tryPlay() {
-            var p = audioElement.play();
-            if (p) {
-                p.catch(function(e) {
-                    console.warn("LipSync play failed:", e.message);
-                });
-            }
-        }
+            source.addEventListener("ended", function() {
+                dhDebug("lipsync:" + mySourceId + " done");
+                if (lipSync) lipSync.stop();
+                _runLipSyncQueue();  // play next in queue, not just "online"
+            });
 
-        // Both events for reliability
-        audioElement.addEventListener("canplay", tryPlay);
-        audioElement.addEventListener("canplaythrough", tryPlay);
-        // Fallback: try playing after a short delay even if events don't fire
-        setTimeout(function() {
-            if (audioElement && audioElement.paused) {
-                console.log("[DH] Force-playing audio after timeout");
-                tryPlay();
-            }
-        }, 1000);
-
-        audioElement.addEventListener("ended", function() {
-            if (lipSync) lipSync.stop();
-            audioElement = null;
-            if (model && model.internalModel && model.internalModel.coreModel) {
-                model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", 0);
-            }
-        });
-
-        audioElement.addEventListener("error", function(e) {
-            console.error("LipSync audio error:", e);
-            if (lipSync) lipSync.stop();
-            audioElement = null;
+            source.start(0);
+        })
+        .catch(function(e) {
+            dhDebug("lipsync_err:" + (e.message || String(e)));
+            _runLipSyncQueue();  // skip this one, try next
         });
     }
 
-    // ===== Handle React Native commands =====
-    window.addEventListener("message", function(event) {
-        var data;
-        try { data = JSON.parse(event.data); } catch(e) { return; }
+    function playAudioForLipSync(url) {
+        if (!lipSync || !model) {
+            dhDebug("lipsync: no lipSync/model");
+            return;
+        }
+        // Stop any currently playing source immediately
+        if (lipSync.source) {
+            try { lipSync.source.stop(); } catch(e) {}
+            try { lipSync.source.disconnect(); } catch(e) {}
+        }
+        if (lipSync) lipSync.stop();
+        _lipSyncQueue.push(url);
+        if (!_lipSyncActive) {
+            _runLipSyncQueue();
+        }
+    }
 
-        console.log("[DH] RN cmd:", data.action);
+    // ===== Handle React Native commands (via injectJavaScript) =====
+    // postMessage bridge is unreliable on Android WebView, so RN calls
+    // this global function directly via injectJavaScript
+    window.dhHandleCommand = function(jsonStr) {
+        var data;
+        try { data = JSON.parse(jsonStr); } catch(e) { dhDebug("parse_err"); return; }
+
+        dhDebug("rx:" + data.action);
 
         switch (data.action) {
             case "speak":
@@ -274,7 +334,7 @@
                 setStatus(data.text);
                 break;
         }
-    });
+    };
 
     // Unlock AudioContext on first user touch (required by mobile Web Audio policy)
     function unlockAudio() {
