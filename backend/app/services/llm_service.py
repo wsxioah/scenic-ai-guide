@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import httpx
@@ -21,26 +22,33 @@ class LLMService:
 
     async def chat_stream(
         self, system_prompt: str, user_message: str,
-        max_tokens: int = 300, temperature: float = 0.4
+        max_tokens: int = 300, temperature: float = 0.4,
+        history: list[dict] | None = None,
     ) -> AsyncIterator[str]:
+        messages = [{"role": "system", "content": system_prompt}]
+        if history:
+            messages.extend(history[-10:])  # last 5 rounds
+        messages.append({"role": "user", "content": user_message})
+
         if settings.llm_provider == "dashscope":
-            async for token in self._dashscope_stream(system_prompt, user_message, max_tokens, temperature):
+            async for token in self._dashscope_stream(messages, max_tokens, temperature):
                 yield token
         elif settings.llm_provider in ("openai", "deepseek", "doubao"):
-            async for token in self._openai_stream(system_prompt, user_message, max_tokens, temperature):
+            async for token in self._openai_stream(messages, max_tokens, temperature):
                 yield token
         else:
             async for token in self._mock_stream(system_prompt, user_message):
                 yield token
 
     async def _dashscope_stream(
-        self, system_prompt: str, user_message: str,
+        self, messages: list[dict],
         max_tokens: int = 300, temperature: float = 0.4
     ) -> AsyncIterator[str]:
         api_key = settings.llm_api_key or os.getenv("DASHSCOPE_API_KEY", "")
         if not api_key:
-            async for t in self._mock_stream(system_prompt, user_message):
-                yield t
+            for token in ["您好", "！", "我是", "景区", "AI", "导览", "助手", "。"]:
+                yield token
+                await asyncio.sleep(0.02)
             return
 
         client = await self._get_client()
@@ -53,10 +61,7 @@ class LLMService:
             },
             json={
                 "model": settings.llm_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
+                "messages": messages,
                 "stream": True,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
@@ -77,7 +82,7 @@ class LLMService:
                         continue
 
     async def _openai_stream(
-        self, system_prompt: str, user_message: str,
+        self, messages: list[dict],
         max_tokens: int = 300, temperature: float = 0.4
     ) -> AsyncIterator[str]:
         api_key = settings.llm_api_key or os.getenv("OPENAI_API_KEY", "")
@@ -93,10 +98,7 @@ class LLMService:
             },
             json={
                 "model": settings.llm_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message},
-                ],
+                "messages": messages,
                 "stream": True,
                 "temperature": temperature,
                 "max_tokens": max_tokens,

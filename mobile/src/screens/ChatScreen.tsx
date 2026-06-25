@@ -209,6 +209,14 @@ export default function ChatScreen() {
         }
       />
 
+      {/* Streaming message — renders tokens in real-time */}
+      {isStreaming && streamingContent !== '' && (
+        <View style={[styles.msgBubble, styles.aiBubble, styles.streamingBubble]}>
+          <Text style={styles.aiLabel}>灵山导览</Text>
+          <Text style={[styles.msgText, styles.aiText]}>{streamingContent}</Text>
+        </View>
+      )}
+
       {/* Voice state indicator */}
       {voiceState === 'listening' && (
         <View style={styles.voiceListening}>
@@ -370,6 +378,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.divider,
     borderBottomLeftRadius: 6,
     ...Shadows.sm,
+  },
+  streamingBubble: {
+    opacity: 0.9,
+    marginHorizontal: 16,
+    marginBottom: 8,
   },
   aiLabel: { fontSize: 10, color: Colors.gold, fontWeight: '600', marginBottom: 4 },
   msgText: { fontSize: 15, lineHeight: 23 },
