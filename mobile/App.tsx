@@ -9,6 +9,7 @@ import ScenicListScreen from './src/screens/ScenicListScreen';
 import ScenicDetailScreen from './src/screens/ScenicDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
+import SearchScreen from './src/screens/SearchScreen';
 
 
 const Tab = createBottomTabNavigator();
@@ -81,6 +82,7 @@ export default function App() {
           component={CommunityScreen}
           options={{ headerTitle: '评论区', headerTintColor: '#2563EB' }}
         />
+        <Stack.Screen name="Search" component={SearchScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

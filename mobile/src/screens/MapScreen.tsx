@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Location from 'expo-location';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import api from '../services/api';
 
 interface Spot {
@@ -21,17 +22,33 @@ const LINGSHAN_CENTER = { lat: 31.424900, lng: 120.101375 };
 const FACILITIES: { id: string; name: string; lat: number; lng: number; kind: 'entrance' | 'restroom' | 'parking' | 'service' | 'food' }[] = [
   { id: 'f-ent-s', name: '南门（主入口）', lat: 31.422280, lng: 120.100379, kind: 'entrance' },
   { id: 'f-ent-e', name: '东门', lat: 31.425746, lng: 120.103862, kind: 'entrance' },
-  { id: 'f-wc-1', name: '南门卫生间', lat: 31.422780, lng: 120.100379, kind: 'restroom' },
-  { id: 'f-wc-2', name: '九龙灌浴卫生间', lat: 31.424896, lng: 120.101176, kind: 'restroom' },
-  { id: 'f-wc-3', name: '梵宫卫生间', lat: 31.426359, lng: 120.099187, kind: 'restroom' },
-  { id: 'f-wc-4', name: '大佛脚下卫生间', lat: 31.427592, lng: 120.100879, kind: 'restroom' },
-  { id: 'f-wc-5', name: '祥符禅寺卫生间', lat: 31.426100, lng: 120.101376, kind: 'restroom' },
+  { id: 'f-wc-1', name: '卫生间 1', lat: 31.435991, lng: 120.103035, kind: 'restroom' },
+  { id: 'f-wc-2', name: '卫生间 2', lat: 31.434377, lng: 120.103193, kind: 'restroom' },
+  { id: 'f-wc-3', name: '卫生间 3', lat: 31.432876, lng: 120.104082, kind: 'restroom' },
+  { id: 'f-wc-4', name: '卫生间 4', lat: 31.434905, lng: 120.108548, kind: 'restroom' },
+  { id: 'f-wc-5', name: '卫生间 5', lat: 31.434571, lng: 120.108588, kind: 'restroom' },
+  { id: 'f-wc-6', name: '卫生间 6', lat: 31.434981, lng: 120.109033, kind: 'restroom' },
+  { id: 'f-wc-7', name: '卫生间 7', lat: 31.432848, lng: 120.110765, kind: 'restroom' },
+  { id: 'f-wc-8', name: '卫生间 8', lat: 31.432353, lng: 120.107907, kind: 'restroom' },
+  { id: 'f-wc-9', name: '卫生间 9', lat: 31.431132, lng: 120.109588, kind: 'restroom' },
+  { id: 'f-wc-10', name: '卫生间 10', lat: 31.430474, lng: 120.105212, kind: 'restroom' },
+  { id: 'f-wc-11', name: '卫生间 11', lat: 31.430343, lng: 120.105022, kind: 'restroom' },
+  { id: 'f-wc-12', name: '卫生间 12', lat: 31.428328, lng: 120.107565, kind: 'restroom' },
+  { id: 'f-wc-13', name: '卫生间 13', lat: 31.428134, lng: 120.109572, kind: 'restroom' },
   { id: 'f-park-1', name: '南门停车场', lat: 31.421470, lng: 120.099881, kind: 'parking' },
   { id: 'f-park-2', name: '东门停车场', lat: 31.425154, lng: 120.104360, kind: 'parking' },
   { id: 'f-svc', name: '游客服务中心', lat: 31.422482, lng: 120.100479, kind: 'service' },
   { id: 'f-food-1', name: '梵宫素斋（餐饮）', lat: 31.426263, lng: 120.099386, kind: 'food' },
   { id: 'f-food-2', name: '素面馆', lat: 31.425100, lng: 120.101375, kind: 'food' },
   { id: 'f-food-3', name: '灵山精舍（素斋/住宿）', lat: 31.424743, lng: 120.098391, kind: 'food' },
+];
+
+const QUICK_CATS: { kind: string; label: string }[] = [
+  { kind: 'entrance', label: '🚪 出入口' },
+  { kind: 'restroom', label: '🚻 卫生间' },
+  { kind: 'parking', label: '🅿️ 停车场' },
+  { kind: 'food', label: '🍜 餐饮' },
+  { kind: 'service', label: '🏠 服务中心' },
 ];
 
 const SCENIC_SPOTS: { id: string; name: string; lat: number; lng: number; category: string; desc: string }[] = [
@@ -99,11 +116,13 @@ var _map=null,_userMarker=null,_spotMarkers=[],_facMarkers=[],_navTarget=null;
 function makeIcon(color,shape){var svg=shape==="pin"?'<svg xmlns="http://www.w3.org/2000/svg" width="28" height="42" viewBox="0 0 28 42"><filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter><path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 28 14 28s14-17.5 14-28C28 6.3 21.7 0 14 0z" fill="'+color+'" filter="url(#s)"/><circle cx="14" cy="14" r="6" fill="#fff"/></svg>':'<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="'+color+'" stroke="#fff" stroke-width="2"/><rect x="6" y="6" width="10" height="10" fill="#fff" opacity="0.35" rx="2"/></svg>';return "data:image/svg+xml;base64,"+btoa(svg)}
 function makeUserIcon(){var svg='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#3B82F6" stroke="#fff" stroke-width="3"/><circle cx="12" cy="12" r="4" fill="#fff"/></svg>';return "data:image/svg+xml;base64,"+btoa(svg)}
 var FAC_COLORS={entrance:"#3B82F6",restroom:"#EC4899",parking:"#F59E0B",service:"#10B981",food:"#F97316"};
+function wgs84ToBd09(lng,lat){var PI=Math.PI,X_PI=PI*3000/180,A=6378245,EE=0.006693421622965943;function tlat(x,y){var r=-100+2*x+3*y+0.2*y*y+0.1*x*y+0.2*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*PI)+20*Math.sin(2*x*PI))*2/3;r+=(20*Math.sin(y*PI)+40*Math.sin(y/3*PI))*2/3;r+=(160*Math.sin(y/12*PI)+320*Math.sin(y*PI/30))*2/3;return r}function tlng(x,y){var r=300+x+2*y+0.1*x*x+0.1*x*y+0.1*Math.sqrt(Math.abs(x));r+=(20*Math.sin(6*x*PI)+20*Math.sin(2*x*PI))*2/3;r+=(20*Math.sin(x*PI)+40*Math.sin(x/3*PI))*2/3;r+=(150*Math.sin(x/12*PI)+300*Math.sin(x/30*PI))*2/3;return r}var dl=tlat(lng-105,lat-35),dn=tlng(lng-105,lat-35),r=lat/180*PI,m=Math.sin(r);m=1-EE*m*m;var s=Math.sqrt(m);dl=dl*180/((A*(1-EE))/(m*s)*PI);dn=dn*180/(A/s*Math.cos(r)*PI);var gl=lng+dn,gt=lat+dl,z=Math.sqrt(gl*gl+gt*gt)+0.00002*Math.sin(gt*X_PI),th=Math.atan2(gt,gl)+0.000003*Math.cos(gl*X_PI);return[z*Math.cos(th)+0.0065,z*Math.sin(th)+0.006]}
 function initMap(){try{_map=new BMapGL.Map("map");_map.centerAndZoom(new BMapGL.Point(120.101375,31.424900),16);_map.setTilt(45);_map.enableScrollWheelZoom(true);try{_map.setMapStyle({style:"dark"})}catch(e){};window.ReactNativeWebView.postMessage(JSON.stringify({type:"mapReady"}))}catch(e){window.ReactNativeWebView.postMessage(JSON.stringify({type:"error",message:"initMap:"+String(e)}));document.getElementById("map").innerHTML='<div style="color:#f87171;text-align:center;padding-top:60%;font-family:sans-serif">初始化失败:'+String(e)+"</div>"}}
 function setSpots(spots){_spotMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_spotMarkers=[];if(!spots||!spots.length)return;spots.forEach(function(s){var pt=new BMapGL.Point(s.lng,s.lat);var color=s.category==="自然"?"#22c55e":s.category==="人文"?"#f59e0b":s.category==="宗教"?"#a855f7":"#6b7280";try{var icon=new BMapGL.Icon(makeIcon(color,"pin"),new BMapGL.Size(28,42),{anchor:new BMapGL.Size(14,42),imageSize:new BMapGL.Size(28,42)});var marker=new BMapGL.Marker(pt,{icon:icon});marker._spot=s;marker.addEventListener("click",function(){showSpotInfo(this)});_map.addOverlay(marker);_spotMarkers.push(marker)}catch(e){};try{var label=new BMapGL.Label(s.name,{position:pt,offset:new BMapGL.Size(-16,-38)});label.setStyle({color:"#fff",background:"rgba(0,0,0,0.75)",border:"none",borderRadius:"3px",padding:"2px 6px",fontSize:"10px",fontFamily:"sans-serif",whiteSpace:"nowrap",pointerEvents:"none"});_map.addOverlay(label);_spotMarkers.push(label)}catch(e){}})}
 function setFacilities(facilities){_facMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_facMarkers=[];if(!facilities||!facilities.length)return;facilities.forEach(function(f){var pt=new BMapGL.Point(f.lng,f.lat);var color=FAC_COLORS[f.kind]||"#6B7280";try{var icon=new BMapGL.Icon(makeIcon(color,"dot"),new BMapGL.Size(22,22),{anchor:new BMapGL.Size(11,11),imageSize:new BMapGL.Size(22,22)});var marker=new BMapGL.Marker(pt,{icon:icon});marker._fac=f;marker.addEventListener("click",function(){try{var w=new BMapGL.InfoWindow('<div class="info-window"><h4>'+this._fac.name+"</h4></div>",{width:140,height:36});_map.openInfoWindow(w,this.getPosition())}catch(e){}});_map.addOverlay(marker);_facMarkers.push(marker)}catch(e){}})}
-function setUserLocation(lat,lng){if(_userMarker){try{_map.removeOverlay(_userMarker)}catch(e){}}try{var pt=new BMapGL.Point(lng,lat);var icon=new BMapGL.Icon(makeUserIcon(),new BMapGL.Size(24,24),{anchor:new BMapGL.Size(12,12),imageSize:new BMapGL.Size(24,24)});_userMarker=new BMapGL.Marker(pt,{icon:icon});_map.addOverlay(_userMarker)}catch(e){}}
+function setUserLocation(lat,lng){if(_userMarker){try{_map.removeOverlay(_userMarker)}catch(e){}}try{var bd=wgs84ToBd09(lng,lat);var pt=new BMapGL.Point(bd[0],bd[1]);var icon=new BMapGL.Icon(makeUserIcon(),new BMapGL.Size(24,24),{anchor:new BMapGL.Size(12,12),imageSize:new BMapGL.Size(24,24)});_userMarker=new BMapGL.Marker(pt,{icon:icon});_map.addOverlay(_userMarker)}catch(e){}}
 function centerOn(lat,lng){try{_map.centerAndZoom(new BMapGL.Point(lng,lat),18)}catch(e){}}
+function centerOnUser(){try{if(_userMarker){_map.centerAndZoom(_userMarker.getPosition(),18)}}catch(e){}}
 function showSpotInfo(marker){try{var s=marker._spot;_navTarget=s;var html='<div class="info-window"><h4>'+s.name+'</h4><p>'+(s.category||"")+'</p><span class="nav-btn" onclick="if(window._navTarget)navTo(window._navTarget.lat,window._navTarget.lng,window._navTarget.name)">导航到这里</span></div>';var w=new BMapGL.InfoWindow(html,{width:160,height:82});_map.openInfoWindow(w,marker.getPosition())}catch(e){}}
 function navTo(lat,lng,name){window.ReactNativeWebView.postMessage(JSON.stringify({type:"navigate",lat:lat,lng:lng,name:name}))}
 document.addEventListener("message",function(e){try{var d=JSON.parse(e.data);if(d.type==="setSpots")setSpots(d.spots);else if(d.type==="setFacilities")setFacilities(d.facilities);else if(d.type==="setUserLocation")setUserLocation(d.lat,d.lng);else if(d.type==="centerOn")centerOn(d.lat,d.lng);else if(d.type==="centerOnUser")centerOnUser()}catch(ex){}});
@@ -120,13 +139,15 @@ setTimeout(function(){if(!_done&&typeof BMapGL==="undefined"){_done=true;clearIn
 
 export default function MapScreen() {
   const mapHtml = useMemo(() => buildMapHtml(), []);
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const [spots, setSpots] = useState<Spot[]>([]);
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
   const [error, setError] = useState('');
   const [mapReady, setMapReady] = useState(false);
-  const [facilityFilter, setFacilityFilter] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const webViewRef = useRef<WebView>(null);
   const locWatchRef = useRef<Location.LocationSubscription | null>(null);
   const userLocRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -188,7 +209,23 @@ export default function MapScreen() {
     }
   }, []);
 
-  // Spot/facility markers removed per user request — map shows only GPS position
+  const toggleCategory = useCallback((kind: string) => {
+    setActiveCategory(prev => prev === kind ? null : kind);
+  }, []);
+
+  // Show / clear facility markers on the map for the active quick category
+  useEffect(() => {
+    if (!mapReady) return;
+    const facs = activeCategory ? FACILITIES.filter(f => f.kind === activeCategory) : [];
+    postToMap({ type: 'setFacilities', facilities: facs });
+  }, [mapReady, activeCategory, postToMap]);
+
+  // Center the map when a place is picked from the search page
+  useEffect(() => {
+    const focus = route.params?.focus;
+    if (!focus || !mapReady) return;
+    postToMap({ type: 'centerOn', lat: focus.lat, lng: focus.lng });
+  }, [route.params, mapReady, postToMap]);
 
   const followRoute = useCallback((routeId: string) => {
     setSelectedRoute(routeId);
@@ -258,10 +295,6 @@ export default function MapScreen() {
     })();
   };
 
-  const toggleFacilityFilter = (kind: string) => {
-    setFacilityFilter(prev => prev === kind ? null : kind);
-  };
-
   return (
     <View style={styles.container}>
       <WebView
@@ -269,11 +302,9 @@ export default function MapScreen() {
         style={styles.map}
         source={{ uri: 'http://localhost:8000/map' }}
         onMessage={handleMessage}
-        geolocationEnabled={true}
         originWhitelist={['*']}
         javaScriptEnabled
         domStorageEnabled
-        geolocationEnabled
         allowFileAccess
         mixedContentMode="always"
         scrollEnabled={false}
@@ -324,14 +355,6 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Facility filter bar */}
-      <View style={styles.facFilterBar}>
-        <ScrollableFacilityFilters
-          selected={facilityFilter}
-          onToggle={toggleFacilityFilter}
-        />
-      </View>
-
       {/* Error banner */}
       {error ? (
         <View style={styles.errorBanner}>
@@ -343,6 +366,55 @@ export default function MapScreen() {
           )}
         </View>
       ) : null}
+
+      {/* Active category place list popup */}
+      {activeCategory && (
+        <View style={styles.catListPopup}>
+          <View style={styles.catListHeader}>
+            <Text style={styles.catListTitle}>{QUICK_CATS.find(c => c.kind === activeCategory)?.label}</Text>
+            <TouchableOpacity onPress={() => setActiveCategory(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.catListClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ maxHeight: 180 }} showsVerticalScrollIndicator={false}>
+            {FACILITIES.filter(f => f.kind === activeCategory).map(f => (
+              <View key={f.id} style={styles.catListItem}>
+                <TouchableOpacity style={{ flex: 1 }} onPress={() => postToMap({ type: 'centerOn', lat: f.lat, lng: f.lng })}>
+                  <Text style={styles.catListItemName}>📍 {f.name}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => postToMap({ type: 'centerOn', lat: f.lat, lng: f.lng })}>
+                  <Text style={styles.catListItemGo}>居中</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {FACILITIES.filter(f => f.kind === activeCategory).length === 0 && (
+              <Text style={styles.catListEmpty}>该分类暂无数据</Text>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Bottom search bar + quick categories */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity style={styles.searchBar} activeOpacity={0.85} onPress={() => navigation.navigate('Search')}>
+          <Text style={styles.searchBarIcon}>🔍</Text>
+          <Text style={styles.searchBarPlaceholder}>请输入搜索地点</Text>
+        </TouchableOpacity>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow}>
+          {QUICK_CATS.map(c => {
+            const active = activeCategory === c.kind;
+            return (
+              <TouchableOpacity
+                key={c.kind}
+                style={[styles.quickChip, active && styles.quickChipActive]}
+                onPress={() => toggleCategory(c.kind)}
+              >
+                <Text style={[styles.quickChipText, active && styles.quickChipTextActive]}>{c.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {/* Map control buttons */}
       <View style={styles.mapControls}>
@@ -356,31 +428,6 @@ export default function MapScreen() {
         </TouchableOpacity>
       </View>
     </View>
-  );
-}
-
-function ScrollableFacilityFilters({ selected, onToggle }: { selected: string | null; onToggle: (k: string) => void }) {
-  const kinds = [
-    { key: 'entrance', label: '🚪 出入口' },
-    { key: 'restroom', label: '🚻 卫生间' },
-    { key: 'parking', label: '🅿️ 停车场' },
-    { key: 'service', label: '🏠 服务中心' },
-    { key: 'food', label: '🍜 餐饮' },
-  ];
-  return (
-    <>
-      {kinds.map(k => (
-        <TouchableOpacity
-          key={k.key}
-          style={[styles.facChip, selected === k.key && styles.facChipActive]}
-          onPress={() => onToggle(k.key)}
-        >
-          <Text style={[styles.facChipText, selected === k.key && styles.facChipTextActive]}>
-            {k.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </>
   );
 }
 
@@ -426,17 +473,6 @@ const styles = StyleSheet.create({
   routeDesc: { color: '#6B7280', fontSize: 11, lineHeight: 16 },
   panelClose: { alignItems: 'center', marginTop: 8, paddingVertical: 8 },
   panelCloseText: { color: '#6B7280', fontSize: 13 },
-  facFilterBar: {
-    position: 'absolute', top: Platform.OS === 'ios' ? 92 : 78,
-    left: 8, right: 56, flexDirection: 'row', flexWrap: 'wrap', gap: 6,
-  },
-  facChip: {
-    backgroundColor: 'rgba(255,255,255,0.92)', paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 16, borderWidth: 0.5, borderColor: '#D1D5DB', marginRight: 6, marginBottom: 4,
-  },
-  facChipActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
-  facChipText: { color: '#374151', fontSize: 11 },
-  facChipTextActive: { color: '#FFFFFF' },
   errorBanner: {
     position: 'absolute', right: 12, top: 132,
     backgroundColor: 'rgba(254,242,242,0.95)', paddingHorizontal: 12, paddingVertical: 6,
@@ -457,4 +493,43 @@ const styles = StyleSheet.create({
   },
   mapCtrlIcon: { fontSize: 20 },
   mapCtrlLabel: { fontSize: 9, color: '#6B7280', marginTop: 1 },
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    paddingHorizontal: 12, paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 16 : 12,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderTopWidth: 0.5, borderTopColor: '#E5E7EB',
+  },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F3F4F6', borderRadius: 22,
+    paddingHorizontal: 16, height: 44,
+    borderWidth: 1, borderColor: '#E5E7EB',
+  },
+  searchBarIcon: { fontSize: 15, marginRight: 8 },
+  searchBarPlaceholder: { fontSize: 14, color: '#9CA3AF' },
+  quickRow: { paddingTop: 10, paddingRight: 12 },
+  quickChip: {
+    backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 16, borderWidth: 0.5, borderColor: '#D1D5DB', marginRight: 8,
+  },
+  quickChipActive: { backgroundColor: '#8B5E2B', borderColor: '#8B5E2B' },
+  quickChipText: { fontSize: 12, color: '#374151' },
+  quickChipTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  catListPopup: {
+    position: 'absolute', left: 8, right: 8, bottom: 110,
+    backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12,
+    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 8,
+  },
+  catListHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  catListTitle: { fontSize: 14, fontWeight: '700', color: '#1F2937' },
+  catListClose: { fontSize: 14, color: '#9CA3AF' },
+  catListItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, borderTopWidth: 0.5, borderTopColor: '#F3F4F6',
+  },
+  catListItemName: { fontSize: 13, color: '#374151' },
+  catListItemGo: { fontSize: 12, color: '#8B5E2B', fontWeight: '600', paddingHorizontal: 6 },
+  catListEmpty: { fontSize: 12, color: '#9CA3AF', paddingVertical: 12, textAlign: 'center' },
 });
