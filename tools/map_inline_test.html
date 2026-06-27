@@ -157,7 +157,8 @@ function initMap(){
 function setUserLocation(lat,lng){
   if(_userMarker){try{_map.removeOverlay(_userMarker)}catch(e){}}
   try{
-    var pt=new BMapGL.Point(lng,lat);
+    var bd=wgs84ToBd09(lng,lat);
+    var pt=new BMapGL.Point(bd[0],bd[1]);
     var icon=new BMapGL.Icon(makeUserIcon(),new BMapGL.Size(24,24),{anchor:new BMapGL.Size(12,12),imageSize:new BMapGL.Size(24,24)});
     _userMarker=new BMapGL.Marker(pt,{icon:icon});
     _map.addOverlay(_userMarker);
@@ -166,15 +167,16 @@ function setUserLocation(lat,lng){
 }
 
 var _navMarker=null;
-function centerOn(lat,lng){
+function centerOn(lat,lng,zoom){
   try{
+    var z=zoom||19;
     var pt=new BMapGL.Point(lng,lat);
     if(_navMarker){try{_map.removeOverlay(_navMarker)}catch(e){}}
     var icon=new BMapGL.Icon(makeIcon("#EF4444","pin"),new BMapGL.Size(28,42),{anchor:new BMapGL.Size(14,42),imageSize:new BMapGL.Size(28,42)});
     _navMarker=new BMapGL.Marker(pt,{icon:icon});
     _map.addOverlay(_navMarker);
-    _map.centerAndZoom(pt,19);
-    log("center:"+lat.toFixed(6)+","+lng.toFixed(6));
+    _map.centerAndZoom(pt,z);
+    log("center:"+lat.toFixed(6)+","+lng.toFixed(6)+" z"+z);
   }catch(e){log("centerErr:"+e)}
 }
 
@@ -185,16 +187,18 @@ function centerOnUser(){
   }catch(e){}
 }
 
-document.addEventListener("message",function(e){
+function _onMapMsg(e){
   try{
     var d=JSON.parse(e.data);
     if(d.type==="setUserLocation") setUserLocation(d.lat,d.lng);
-    else if(d.type==="centerOn") centerOn(d.lat,d.lng);
+    else if(d.type==="centerOn") centerOn(d.lat,d.lng,d.zoom);
     else if(d.type==="centerOnUser") centerOnUser();
     else if(d.type==="setFacilities") setFacilities(d.facilities);
     else if(d.type==="setSpots") setSpots(d.spots);
   }catch(ex){}
-});
+}
+document.addEventListener("message",_onMapMsg);
+window.addEventListener("message",_onMapMsg);
 
 // SDK loading poll
 var _el=document.getElementById("map");
