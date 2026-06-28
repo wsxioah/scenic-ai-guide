@@ -34,6 +34,27 @@
     var lipSync = null;
     var audioElement = null;
 
+    // Different models use different mouth param IDs (Chitose uses the legacy
+    // PARAM_MOUTH_OPEN_Y, haru uses ParamMouthOpenY). Setting an unknown id is a
+    // harmless no-op in Cubism core, so drive both.
+    var MOUTH_PARAMS = ["ParamMouthOpenY", "PARAM_MOUTH_OPEN_Y"];
+    function setMouthOpen(v) {
+        if (!model || !model.internalModel || !model.internalModel.coreModel) return;
+        var cm = model.internalModel.coreModel;
+        for (var k = 0; k < MOUTH_PARAMS.length; k++) {
+            try { cm.setParameterValueById(MOUTH_PARAMS[k], v); } catch (e) {}
+        }
+    }
+
+    var FEMALE_MODEL = "/digital-human/live2d/models/haru_greeter_t03.model3.json";
+    var MALE_MODEL = "/digital-human/live2d/models-chitose/chitose.model3.json";
+    function getModelUrl() {
+        try {
+            var m = new URLSearchParams(location.search).get("model");
+            return m === "male" ? MALE_MODEL : FEMALE_MODEL;
+        } catch(e) { return FEMALE_MODEL; }
+    }
+
     function fitModelToViewport() {
         if (!model || !model.internalModel || !model.internalModel.originalWidth) return;
         var stage = document.getElementById("live2dStage");
@@ -84,17 +105,20 @@
         HTMLCanvasElement.prototype.getContext = origGetContext;
 
         try {
-            model = await PIXI.live2d.Live2DModel.from(
-                "/digital-human/live2d/models/haru_greeter_t03.model3.json"
-            );
-            pixiApp.stage.addChild(model);
-            fitModelToViewport();
-            setStatus("在线");
+            model = await PIXI.live2d.Live2DModel.from(getModelUrl());
         } catch(e) {
-            console.error("Live2D load:", e);
-            setStatus("模型加载失败");
-            return;
+            console.error("Live2D primary load failed, falling back to female:", e);
+            try {
+                model = await PIXI.live2d.Live2DModel.from(FEMALE_MODEL);
+            } catch(e2) {
+                console.error("Live2D load:", e2);
+                setStatus("模型加载失败");
+                return;
+            }
         }
+        pixiApp.stage.addChild(model);
+        fitModelToViewport();
+        setStatus("在线");
 
         lipSync = new LipSync();
         dhDebug("ready");
@@ -167,10 +191,7 @@
 
         if (lipSync && model) {
             lipSync.start(audioElement, function(mouthOpen) {
-                if (model && model.internalModel && model.internalModel.coreModel) {
-                    var v = Math.max(0, Math.min(1, mouthOpen * 3.0));
-                    model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", v);
-                }
+                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 3.0)));
             }, { muted: false });
         }
 
@@ -200,9 +221,7 @@
         if (_lipSyncQueue.length === 0) {
             _lipSyncActive = false;
             dhDebug("online");
-            if (model && model.internalModel && model.internalModel.coreModel) {
-                model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", 0);
-            }
+            setMouthOpen(0);
             return;
         }
         _lipSyncActive = true;
@@ -256,10 +275,7 @@
             lipSync.analyser = analyser;
             lipSync.isRunning = true;
             lipSync.onMouthUpdate = function(mouthOpen) {
-                if (model && model.internalModel && model.internalModel.coreModel) {
-                    var v = Math.max(0, Math.min(1, mouthOpen * 3.0));
-                    model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", v);
-                }
+                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 3.0)));
             };
             lipSync._loop();
 

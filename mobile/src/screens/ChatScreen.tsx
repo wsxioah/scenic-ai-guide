@@ -17,10 +17,13 @@ type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 
 const API_BASE = SERVER_URL;
 
+const VOICE_BY_GENDER = { female: 'zh-CN-XiaoxiaoNeural', male: 'zh-CN-YunxiNeural' } as const;
+
 export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [recognizeVisible, setRecognizeVisible] = useState(false);
+  const [avatarGender, setAvatarGender] = useState<'female' | 'male'>('female');
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -123,13 +126,13 @@ export default function ChatScreen() {
 
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'query', text, voice: 'zh-CN-XiaoxiaoNeural' }));
+      ws.send(JSON.stringify({ type: 'query', text, voice: VOICE_BY_GENDER[avatarGender] }));
     } else {
       Alert.alert('连接中', '正在连接服务器，请稍后重试');
       setStreaming(false);
       connectWSRef.current();
     }
-  }, [inputText, isStreaming]);
+  }, [inputText, isStreaming, avatarGender]);
 
   const handleVoiceResult = useCallback((text: string) => {
     setInputText(text);
@@ -153,13 +156,13 @@ export default function ChatScreen() {
     setStreaming(true);
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'query', text: content, voice: 'zh-CN-XiaoxiaoNeural' }));
+      ws.send(JSON.stringify({ type: 'query', text: content, voice: VOICE_BY_GENDER[avatarGender] }));
     } else {
       Alert.alert('连接中', '正在连接服务器...');
       setStreaming(false);
       connectWSRef.current();
     }
-  }, [addMessage, setStreaming]);
+  }, [addMessage, setStreaming, avatarGender]);
 
   useEffect(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
@@ -178,7 +181,7 @@ export default function ChatScreen() {
     <>
       {/* Avatar */}
       <View style={styles.avatarContainer}>
-        <AvatarWebView style={styles.avatarWebView} />
+        <AvatarWebView style={styles.avatarWebView} modelId={avatarGender} />
       </View>
 
       <FlatList
@@ -294,6 +297,20 @@ export default function ChatScreen() {
           </View>
         </View>
         <View style={styles.headerRight}>
+          <View style={styles.genderToggle}>
+            <TouchableOpacity
+              style={[styles.genderBtn, avatarGender === 'female' && styles.genderBtnActive]}
+              onPress={() => setAvatarGender('female')}
+            >
+              <Text style={[styles.genderBtnText, avatarGender === 'female' && styles.genderBtnTextActive]}>女</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.genderBtn, avatarGender === 'male' && styles.genderBtnActive]}
+              onPress={() => setAvatarGender('male')}
+            >
+              <Text style={[styles.genderBtnText, avatarGender === 'male' && styles.genderBtnTextActive]}>男</Text>
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity onPress={() => setRecognizeVisible(true)} style={styles.headerBtn}>
             <Text style={styles.headerBtnIcon}>📷</Text>
           </TouchableOpacity>
@@ -354,6 +371,14 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full, backgroundColor: Colors.goldSurface,
   },
   newChatText: { fontSize: 12, color: Colors.goldDark, fontWeight: '600' },
+  genderToggle: {
+    flexDirection: 'row', backgroundColor: Colors.goldSurface,
+    borderRadius: BorderRadius.full, padding: 2,
+  },
+  genderBtn: { paddingHorizontal: 11, paddingVertical: 5, borderRadius: BorderRadius.full },
+  genderBtnActive: { backgroundColor: Colors.goldDark },
+  genderBtnText: { fontSize: 13, color: Colors.goldDark, fontWeight: '600' },
+  genderBtnTextActive: { color: '#FFFFFF' },
 
   // Avatar
   avatarContainer: {

@@ -1,5 +1,5 @@
-import { useRef, useCallback } from 'react';
-import { View, StyleSheet, Dimensions, Platform } from 'react-native';
+import { useRef, useCallback, useMemo } from 'react';
+import { View, StyleSheet, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SERVER_URL } from '../config';
 
@@ -7,12 +7,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface AvatarWebViewProps {
   style?: any;
+  modelId?: 'female' | 'male';
 }
-
-const DIGITAL_HUMAN_URL = Platform.select({
-  android: SERVER_URL + '/digital-human/model-lite.html?t=' + Date.now(),
-  default: SERVER_URL + '/digital-human/model-lite.html?t=' + Date.now(),
-});
 
 let _webViewRef: WebView | null = null;
 
@@ -26,8 +22,12 @@ export function avatarSendAction(action: string, extra: Record<string, any> = {}
   }
 }
 
-export default function AvatarWebView({ style }: AvatarWebViewProps) {
+export default function AvatarWebView({ style, modelId = 'female' }: AvatarWebViewProps) {
   const webViewRef = useRef<WebView>(null);
+  const uri = useMemo(
+    () => `${SERVER_URL}/digital-human/model-lite.html?model=${modelId}&t=${Date.now()}`,
+    [modelId]
+  );
 
   const onMessage = useCallback((event: any) => {
     try {
@@ -47,7 +47,7 @@ export default function AvatarWebView({ style }: AvatarWebViewProps) {
     <View style={[styles.container, style]}>
       <WebView
         ref={webViewRef}
-        source={{ uri: DIGITAL_HUMAN_URL }}
+        source={{ uri }}
         style={styles.webview}
         onMessage={onMessage}
         scrollEnabled={false}

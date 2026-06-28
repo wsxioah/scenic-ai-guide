@@ -27,8 +27,9 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 EMOTION_TAG_RE = re.compile(r'[（(][^）)]*[）)]|【[^】]*】|\*\*[^*]*\*\*|#{1,6}\s*')
 
 TTS_VOICE = "zh-CN-XiaoxiaoNeural"
+ALLOWED_VOICES = {"zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"}
 
-SYSTEM_PROMPT = """你是景区AI导游"小景"。用热情口语化的中文回答，每次80-100字。用短句，少用逗号，句末用句号。禁止括号、markdown、表情。不知道就建议咨询工作人员。"""
+SYSTEM_PROMPT ="""你是景区AI导游"小景"。用热情口语化的中文回答，每次80-100字。用短句，少用逗号，句末用句号。禁止括号、markdown、表情。不知道就建议咨询工作人员。"""
 
 
 def _prewarm_llm():
@@ -57,9 +58,9 @@ def _clean_text_for_tts(text: str) -> str:
     return text.strip()
 
 
-async def _edge_tts(text: str, output_wav: str) -> str:
+async def _edge_tts(text: str, output_wav: str, voice: str = TTS_VOICE) -> str:
     mp3_data = io.BytesIO()
-    comm = edge_tts.Communicate(text, TTS_VOICE)
+    comm = edge_tts.Communicate(text, voice)
     async for chunk in comm.stream():
         if isinstance(chunk, dict) and chunk.get("type") == "audio":
             mp3_data.write(chunk["data"])
@@ -111,6 +112,9 @@ async def websocket_digital_human(ws: WebSocket):
             if not user_text:
                 await send({"type": "error", "message": "请输入内容"})
                 continue
+
+            raw_voice = data.get("voice")
+            voice = raw_voice if raw_voice in ALLOWED_VOICES else TTS_VOICE
 
             await send({"type": "status", "state": "thinking"})
 
@@ -169,9 +173,9 @@ async def websocket_digital_human(ws: WebSocket):
                             chunk_idx += 1
                             filepath = os.path.join(AUDIO_DIR, f"{session_id}_{idx}.wav")
 
-                            async def run_tts(i=idx, fp=filepath, txt=sentence):
+                            async def run_tts(i=idx, fp=filepath, txt=sentence, vc=voice):
                                 try:
-                                    await _edge_tts(txt, fp)
+                                    await _edge_tts(txt, fp, vc)
                                     completed[i] = f"/static/audio/{session_id}_{i}.wav"
                                     deliver_event.set()
                                 except Exception as e:
@@ -182,31 +186,41 @@ async def websocket_digital_human(ws: WebSocket):
                 await send({"type": "error", "message": f"AI回复失败：{str(e)}"})
                 continue
 
-            # TTS any remaining text
+            # LLM stream finished — finalize the text turn IMMEDIATELY so the
+            # client unlocks the UI. Audio synthesis must never block turn
+            # completion: a slow or unreachable TTS would otherwise hang the chat.
+            await send({"type": "llm_done", "full_text": full_text})
+            history.append({"role": "user", "content": user_text})
+            history.append({"role": "assistant", "content": full_text})
+            if len(history) > 10:
+                history[:] = history[-10:]
+
+            # Schedule TTS for any remaining text as a background task (not awaited inline).
             remaining = _clean_text_for_tts(buffer.strip())
             if remaining:
                 idx = chunk_idx
                 chunk_idx += 1
-                filepath = os.path.join(AUDIO_DIR, f"{session_id}_{idx}.wav")
-                try:
-                    await _edge_tts(remaining, filepath)
-                    completed[idx] = f"/static/audio/{session_id}_{idx}.wav"
-                    deliver_event.set()
-                except Exception as e:
-                    print(f"[TTS] final chunk failed: {e}")
+                fp = os.path.join(AUDIO_DIR, f"{session_id}_{idx}.wav")
+
+                async def run_tts_final(i=idx, fp=fp, txt=remaining, vc=voice):
+                    try:
+                        await _edge_tts(txt, fp, vc)
+                        completed[i] = f"/static/audio/{session_id}_{i}.wav"
+                        deliver_event.set()
+                    except Exception as e:
+                        print(f"[TTS] final chunk failed: {e}")
+                tts_tasks.append((idx, asyncio.create_task(run_tts_final())))
             total = chunk_idx
 
-            # Wait for all background TTS to finish
+            # Drain background TTS and deliver any remaining audio chunks. The text
+            # turn already completed above, so this no longer blocks the UI.
             if tts_tasks:
                 await asyncio.gather(*(t for _, t in tts_tasks), return_exceptions=True)
-            # Signal sequencer no more chunks coming, then wait for it
-            # Update all remaining chunks with total
             seq_task.cancel()
             try:
                 await seq_task
             except asyncio.CancelledError:
                 pass
-            # Deliver any remaining completed chunks in order
             while next_deliver in completed:
                 audio_url = completed.pop(next_deliver)
                 await send({
@@ -216,17 +230,6 @@ async def websocket_digital_human(ws: WebSocket):
                     "chunk_total": total,
                 })
                 next_deliver += 1
-
-            await send({"type": "llm_done", "full_text": full_text})
-
-            # Store conversation context
-            history.append({"role": "user", "content": user_text})
-            history.append({"role": "assistant", "content": full_text})
-            if len(history) > 10:
-                history[:] = history[-10:]
-
-            if total > 0:
-                await send({"type": "status", "state": "speaking"})
 
             await send({"type": "ready"})
 
