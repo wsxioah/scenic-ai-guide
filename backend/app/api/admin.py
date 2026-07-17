@@ -3,8 +3,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models.database import get_db
 from app.models.entities import User, ScenicSpot, KnowledgePoint, Conversation, Message, Announcement
+from app.core.auth import get_current_user
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/dashboard")

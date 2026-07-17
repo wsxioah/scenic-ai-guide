@@ -40,7 +40,9 @@ export default function AvatarWebView({ style, modelId = 'female' }: AvatarWebVi
       if (data.audioEnded) {
         console.log('[Avatar] Audio playback ended');
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[Avatar] onMessage parse error:', e);
+    }
   }, []);
 
   return (
@@ -55,7 +57,7 @@ export default function AvatarWebView({ style, modelId = 'female' }: AvatarWebVi
         domStorageEnabled
         cacheEnabled={false}
         cacheMode="LOAD_NO_CACHE"
-        originWhitelist={['*']}
+        originWhitelist={[SERVER_URL]}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
         onLoad={() => {

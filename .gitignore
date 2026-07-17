@@ -1,60 +1,27 @@
+# Dependencies
 node_modules/
 
-# Expo
-.expo/
-dist/
-
-# Android (mobile/)
-mobile/android/app/build/
-mobile/android/.gradle/
-mobile/android/build/
-mobile/android/captures/
-mobile/android/local.properties
-mobile/android/app/.cxx/
-*.jks
-*.keystore
-*.hprof
-
-# iOS
-ios/Pods/
-ios/build/
-
-# Backend
+# Python
 __pycache__/
 *.pyc
+*.pyo
+
+# Environment
 .env
-chroma_data/
-*.db
-*.db-journal
-static/audio/*.mp3
+
+# Large binaries
+sherpa_models/
+espeak-ng-data/
+*.exe
+
+# Generated audio
 static/audio/*.wav
 
-# Admin
-admin/node_modules/
-admin/dist/
+# ChromaDB data
+chroma_data/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Misc
-*.log
-*.wav
-npm-debug.*
-tokens_debug.txt
-kokoro_*.txt
-espeak-ng-data/
-espeak_data.zip
-sherpa_models/
-
-# GPT-SoVITS (local TTS engine, ~6.7GB models)
-gpt-sovits/
-
-# Temp files
-tmp/

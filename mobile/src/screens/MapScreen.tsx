@@ -6,6 +6,7 @@ import {
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { SERVER_URL } from '../config';
 
 // ====== 灵山胜境 · 真实数据 ======
 const LINGSHAN_CENTER = { lat: 31.431031, lng: 120.106595 }; // 九龙灌浴（景区中心，实采）
@@ -24,6 +25,13 @@ const FACILITIES: { id: string; name: string; lat: number; lng: number; kind: 'e
   { id: 'f-wc-11', name: '卫生间 11', lat: 31.430343, lng: 120.105022, kind: 'restroom' },
   { id: 'f-wc-12', name: '卫生间 12', lat: 31.428328, lng: 120.107565, kind: 'restroom' },
   { id: 'f-wc-13', name: '卫生间 13', lat: 31.428134, lng: 120.109572, kind: 'restroom' },
+  // 停车场
+  { id: 'f-park-1', name: '停车场 P1', lat: 31.429737, lng: 120.103105, kind: 'parking' },
+  { id: 'f-park-2', name: '停车场 P2', lat: 31.429423, lng: 120.103024, kind: 'parking' },
+  { id: 'f-park-3', name: '停车场 P3', lat: 31.426428, lng: 120.110571, kind: 'parking' },
+  { id: 'f-park-4', name: '停车场 P4', lat: 31.428069, lng: 120.110951, kind: 'parking' },
+  { id: 'f-park-5', name: '停车场 P5', lat: 31.428064, lng: 120.112118, kind: 'parking' },
+  { id: 'f-park-6', name: '停车场 P6', lat: 31.429769, lng: 120.111480, kind: 'parking' },
 ];
 
 const QUICK_CATS: { kind: string; label: string }[] = [
@@ -165,10 +173,11 @@ export default function MapScreen() {
     setSelectedRoute(routeId);
     const rt = RECOMMENDED_ROUTES.find(r => r.id === routeId);
     if (rt && rt.spots.length > 0) {
-      const firstSpot = SCENIC_SPOTS.find(s => s.id === rt.spots[0]);
-      if (firstSpot) {
-        postToMap({ type: 'centerOn', lat: firstSpot.lat, lng: firstSpot.lng, zoom: 16 });
-      }
+      const path = rt.spots
+        .map(id => SCENIC_SPOTS.find(s => s.id === id))
+        .filter(Boolean)
+        .map(s => ({ lat: s!.lat, lng: s!.lng }));
+      postToMap({ type: 'setRoutePath', path });
     }
   }, [postToMap]);
 
@@ -234,7 +243,7 @@ export default function MapScreen() {
       <WebView
         ref={webViewRef}
         style={styles.map}
-        source={{ uri: 'http://localhost:8000/map' }}
+        source={{ uri: `${SERVER_URL}/map?v=2` }}
         onMessage={handleMessage}
         originWhitelist={['*']}
         javaScriptEnabled
@@ -316,8 +325,8 @@ export default function MapScreen() {
                 <TouchableOpacity style={{ flex: 1 }} onPress={() => postToMap({ type: 'centerOn', lat: f.lat, lng: f.lng })}>
                   <Text style={styles.catListItemName}>📍 {f.name}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => postToMap({ type: 'centerOn', lat: f.lat, lng: f.lng })}>
-                  <Text style={styles.catListItemGo}>居中</Text>
+                <TouchableOpacity onPress={() => postToMap({ type: 'findWalkingRoute', lat: f.lat, lng: f.lng })}>
+                  <Text style={styles.catListItemGo}>🧭 导航</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -328,27 +337,29 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Bottom search bar + quick categories */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity style={styles.searchBar} activeOpacity={0.85} onPress={() => navigation.navigate('Search')}>
-          <Text style={styles.searchBarIcon}>🔍</Text>
-          <Text style={styles.searchBarPlaceholder}>请输入搜索地点</Text>
-        </TouchableOpacity>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow}>
-          {QUICK_CATS.map(c => {
-            const active = activeCategory === c.kind;
-            return (
-              <TouchableOpacity
-                key={c.kind}
-                style={[styles.quickChip, active && styles.quickChipActive]}
-                onPress={() => toggleCategory(c.kind)}
-              >
-                <Text style={[styles.quickChipText, active && styles.quickChipTextActive]}>{c.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
+      {/* Bottom search bar + quick categories — hidden when info panel is open */}
+      {!showInfo && (
+        <View style={styles.bottomBar}>
+          <TouchableOpacity style={styles.searchBar} activeOpacity={0.85} onPress={() => navigation.navigate('Search')}>
+            <Text style={styles.searchBarIcon}>🔍</Text>
+            <Text style={styles.searchBarPlaceholder}>请输入搜索地点</Text>
+          </TouchableOpacity>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow}>
+            {QUICK_CATS.map(c => {
+              const active = activeCategory === c.kind;
+              return (
+                <TouchableOpacity
+                  key={c.kind}
+                  style={[styles.quickChip, active && styles.quickChipActive]}
+                  onPress={() => toggleCategory(c.kind)}
+                >
+                  <Text style={[styles.quickChipText, active && styles.quickChipTextActive]}>{c.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Map control buttons */}
       <View style={styles.mapControls}>

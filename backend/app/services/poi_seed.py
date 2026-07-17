@@ -16,8 +16,12 @@ SEED_POIS = [
     {"name": "大佛脚下卫生间", "category": "toilet", "lat": 31.4233, "lng": 120.0895, "icon": "🚻"},
     {"name": "祥符禅寺卫生间", "category": "toilet", "lat": 31.4218, "lng": 120.0900, "icon": "🚻"},
     # 停车场
-    {"name": "南门停车场", "category": "parking", "lat": 31.4172, "lng": 120.0885, "icon": "🅿️", "address": "南门入口旁"},
-    {"name": "东门停车场", "category": "parking", "lat": 31.4208, "lng": 120.0930, "icon": "🅿️", "address": "东门入口旁"},
+    {"name": "停车场 P1", "category": "parking", "lat": 31.429737, "lng": 120.103105, "icon": "🅿️"},
+    {"name": "停车场 P2", "category": "parking", "lat": 31.429423, "lng": 120.103024, "icon": "🅿️"},
+    {"name": "停车场 P3", "category": "parking", "lat": 31.426428, "lng": 120.110571, "icon": "🅿️"},
+    {"name": "停车场 P4", "category": "parking", "lat": 31.428069, "lng": 120.110951, "icon": "🅿️"},
+    {"name": "停车场 P5", "category": "parking", "lat": 31.428064, "lng": 120.112118, "icon": "🅿️"},
+    {"name": "停车场 P6", "category": "parking", "lat": 31.429769, "lng": 120.111480, "icon": "🅿️"},
     # 服务中心
     {"name": "游客服务中心", "category": "service", "lat": 31.4182, "lng": 120.0891, "icon": "ℹ️", "phone": "0510-85680000", "opening_hours": "8:00-17:00"},
     # 餐饮

@@ -4,6 +4,7 @@ import {
   StyleSheet, KeyboardAvoidingView, Platform, Alert, StatusBar,
 } from 'react-native';
 import { useAudioPlayer } from 'expo-audio';
+import { useNavigation } from '@react-navigation/native';
 import { useChatStore } from '../stores/chatStore';
 import { useUserStore } from '../stores/userStore';
 import VoiceRecordButton from '../components/VoiceRecordButton';
@@ -11,7 +12,7 @@ import RecognizeModal from '../components/RecognizeModal';
 import AvatarWebView, { avatarSendAction } from '../components/AvatarWebView';
 import api from '../services/api';
 import { Colors, Spacing, BorderRadius, Shadows, Typography } from '../theme';
-import { SERVER_URL, WS_URL } from '../config';
+import { SERVER_URL, WS_URL, SHOW_PHOTO_RECOGNITION } from '../config';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 
@@ -57,13 +58,15 @@ export default function ChatScreen() {
   }, [audioPlayer, playNextInQueue]);
 
   const { userId, isLoggedIn, login } = useUserStore();
+  const navigation = useNavigation<any>();
 
   useEffect(() => {
     if (!isLoggedIn) {
-      api.login('13800000000', '0000').then((user) => {
-        login(user.id, user.phone, user.nickname, '');
-        api.setUserId(user.id);
-      }).catch(() => {});
+      // Prompt user to log in before using AI guide
+      Alert.alert('欢迎使用灵山AI导览', '请先在「我的」页面登录后使用智能导览功能', [
+        { text: '去登录', onPress: () => navigation.navigate('Profile') },
+        { text: '稍后再说', style: 'cancel' },
+      ]);
     }
   }, []);
 
@@ -101,7 +104,9 @@ export default function ChatScreen() {
             Alert.alert('错误', data.message);
             flushStreamContent(); setStreaming(false); break;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.warn('[WS] message parse error:', e);
+      }
     };
 
     ws.onclose = () => {
@@ -200,7 +205,7 @@ export default function ChatScreen() {
             <Text style={styles.emptyTitle}>灵山 AI 导览</Text>
             <Text style={styles.emptySubtitle}>我是您的智慧导游，可以语音或文字向我提问</Text>
             <View style={styles.quickPrompts}>
-              {['景区介绍', '游览路线', '拍照识景', '门票价格', '开放时间'].map((q) => (
+              {['景区介绍', '游览路线', ...(SHOW_PHOTO_RECOGNITION ? ['拍照识景'] : []), '门票价格', '开放时间'].map((q) => (
                 <TouchableOpacity key={q} style={styles.quickPrompt} onPress={() => {
                   if (q === '拍照识景') { setRecognizeVisible(true); } else { setInputText(q); }
                 }}>
@@ -311,9 +316,11 @@ export default function ChatScreen() {
               <Text style={[styles.genderBtnText, avatarGender === 'male' && styles.genderBtnTextActive]}>男</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setRecognizeVisible(true)} style={styles.headerBtn}>
-            <Text style={styles.headerBtnIcon}>📷</Text>
-          </TouchableOpacity>
+          {SHOW_PHOTO_RECOGNITION && (
+            <TouchableOpacity onPress={() => setRecognizeVisible(true)} style={styles.headerBtn}>
+              <Text style={styles.headerBtnIcon}>📷</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={clearMessages} style={styles.newChatBtn}>
             <Text style={styles.newChatText}>新对话</Text>
           </TouchableOpacity>

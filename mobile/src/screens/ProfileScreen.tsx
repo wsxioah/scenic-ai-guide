@@ -42,13 +42,17 @@ export default function ProfileScreen() {
     ]);
   };
 
+  const notImplemented = (label: string) => () => {
+    Alert.alert(label, '功能开发中，敬请期待');
+  };
+
   const menuItems = [
-    { icon: '📋', label: '我的订单', onPress: () => {} },
-    { icon: '⭐', label: '我的收藏', onPress: () => {} },
-    { icon: '🕐', label: '浏览历史', onPress: () => {} },
-    { icon: '💬', label: '我的评论', onPress: () => {} },
-    { icon: '📊', label: '游览报告', onPress: () => {} },
-    { icon: '⚙️', label: '设置', onPress: () => {} },
+    { icon: '📋', label: '我的订单', onPress: notImplemented('我的订单') },
+    { icon: '⭐', label: '我的收藏', onPress: notImplemented('我的收藏') },
+    { icon: '🕐', label: '浏览历史', onPress: notImplemented('浏览历史') },
+    { icon: '💬', label: '我的评论', onPress: notImplemented('我的评论') },
+    { icon: '📊', label: '游览报告', onPress: notImplemented('游览报告') },
+    { icon: '⚙️', label: '设置', onPress: notImplemented('设置') },
   ];
 
   if (showLogin) {

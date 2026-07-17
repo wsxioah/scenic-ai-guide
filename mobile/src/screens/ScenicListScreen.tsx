@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, FlatList, TextInput,
+  View, Text, TouchableOpacity, FlatList, TextInput, ScrollView,
   StyleSheet, RefreshControl, StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -94,23 +94,24 @@ export default function ScenicListScreen() {
       </View>
 
       {/* Categories */}
-      <FlatList
-        horizontal
-        data={CATEGORIES}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.catChip, category === item && styles.catChipActive]}
-            onPress={() => setCategory(item)}
-          >
-            <Text style={styles.catIcon}>{CATEGORY_ICONS[item]}</Text>
-            <Text style={[styles.catText, category === item && styles.catTextActive]}>{item}</Text>
-          </TouchableOpacity>
-        )}
-        keyExtractor={(item) => item}
-        style={styles.catList}
-        contentContainerStyle={{ paddingHorizontal: Spacing.lg }}
-        showsHorizontalScrollIndicator={false}
-      />
+      <View style={styles.catRow}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: Spacing.lg, gap: 8 }}
+        >
+          {CATEGORIES.map((item) => (
+            <TouchableOpacity
+              key={item}
+              style={[styles.catChip, category === item && styles.catChipActive]}
+              onPress={() => setCategory(item)}
+            >
+              <Text style={styles.catIcon}>{CATEGORY_ICONS[item]}</Text>
+              <Text style={[styles.catText, category === item && styles.catTextActive]}>{item}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* Sort */}
       <View style={styles.sortRow}>
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
   searchBtnText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14 },
 
   // Categories
-  catList: { maxHeight: 52, backgroundColor: Colors.white, paddingBottom: 8 },
+  catRow: { height: 48, backgroundColor: Colors.white, justifyContent: 'center' },
   catChip: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: BorderRadius.full,

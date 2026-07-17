@@ -6,6 +6,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import api from '../services/api';
 import { Colors, Spacing, BorderRadius, Shadows, Typography } from '../theme';
+import { SHOW_PHOTO_RECOGNITION } from '../config';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -21,7 +22,9 @@ export default function HomeScreen() {
       ]);
       if (results[0].status === 'fulfilled') setAnnouncements(results[0].value);
       if (results[1].status === 'fulfilled') setHotSpots(results[1].value.items || []);
-    } catch {}
+	    } catch (e) {
+      console.warn('[Home] loadData error:', e);
+    }
   };
 
   useEffect(() => { loadData(); }, []);
@@ -89,7 +92,7 @@ export default function HomeScreen() {
           {[
             { label: '景点列表', icon: '🏛', screen: 'Scenic', desc: '浏览名胜' },
             { label: '景区地图', icon: '🗺️', screen: 'Map', desc: '导览导航' },
-            { label: '拍照识景', icon: '📷', screen: 'Chat', desc: '一键识别' },
+            ...(SHOW_PHOTO_RECOGNITION ? [{ label: '拍照识景', icon: '📷', screen: 'Chat', desc: '一键识别' }] : []),
           ].map((action) => (
             <TouchableOpacity
               key={action.label}

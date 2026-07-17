@@ -150,13 +150,21 @@ async def get_announcements(db: AsyncSession = Depends(get_db)):
 @router.get("/nearby")
 async def nearby_spots(lat: float, lng: float, radius: float = 5.0,
                        db: AsyncSession = Depends(get_db)):
-    """查找附近景点（简单距离计算）"""
-    result = await db.execute(select(ScenicSpot))
+    """查找附近景点（bounding box 预过滤 + 精确距离）"""
+    import math
+    # Bounding box: ~111km per degree lat, lng scaled by cos(lat)
+    deg_margin = (radius / 111.0) * 1.5  # 50% margin for safety
+    lng_margin = deg_margin / max(math.cos(math.radians(lat)), 0.1)
+    result = await db.execute(
+        select(ScenicSpot).where(
+            ScenicSpot.lat.between(lat - deg_margin, lat + deg_margin),
+            ScenicSpot.lng.between(lng - lng_margin, lng + lng_margin),
+        )
+    )
     spots = result.scalars().all()
-    # 简易距离过滤
     nearby = []
     for s in spots:
-        dist = ((s.lat - lat) ** 2 + (s.lng - lng) ** 2) ** 0.5 * 111
+        dist = math.sqrt((s.lat - lat) ** 2 + (s.lng - lng) ** 2) * 111
         if dist <= radius:
             nearby.append({
                 "id": s.id, "name": s.name, "lat": s.lat, "lng": s.lng,

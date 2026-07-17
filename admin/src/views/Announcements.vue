@@ -9,15 +9,21 @@ async function handleCreate() {
   if (!createForm.value.title.trim() || !createForm.value.content.trim()) return
   loading.value = true
   try {
-    const params = new URLSearchParams()
-    params.set('title', createForm.value.title)
-    params.set('content', createForm.value.content)
-    params.set('type', createForm.value.type)
-    await axios.post('/api/admin/announcements', params)
+    await axios.post('/api/admin/announcements', null, {
+      params: {
+        title: createForm.value.title,
+        content: createForm.value.content,
+        type: createForm.value.type,
+      },
+    })
     alert('公告发布成功！')
     createForm.value = { title: '', content: '', type: 'normal' }
-  } catch { /* ignore */ }
-  loading.value = false
+  } catch (e) {
+    const detail = e?.response?.status ? 'HTTP ' + e.response.status : (e?.message || '未知错误')
+    alert('公告发布失败：' + detail)
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 

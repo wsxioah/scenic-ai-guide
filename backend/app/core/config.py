@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -5,7 +6,10 @@ from typing import Optional
 class Settings(BaseSettings):
     app_name: str = "景区AI数字人导览"
     debug: bool = True
-    secret_key: str = "scenic-ai-secret-key-change-in-production"
+    secret_key: str = os.environ.get(
+        "JWT_SECRET_KEY",
+        "scenic-ai-secret-key-change-in-production"
+    )
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7
 
@@ -28,8 +32,11 @@ class Settings(BaseSettings):
     # Vector DB
     chroma_persist_dir: str = "./chroma_data"
 
-    # CORS
-    cors_origins: list[str] = ["*"]
+    # CORS — tighten for production, override via .env
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:8081",
+    ]
 
     class Config:
         env_file = ".env"

@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
 
 const config = ref({
   modelType: 'vrm',
@@ -8,6 +9,7 @@ const config = ref({
   speed: 1.0,
   pitch: 1.0,
 })
+const saving = ref(false)
 
 const modelOptions = [
   { value: 'vrm', label: 'VRM 3D数字人' },
@@ -21,8 +23,25 @@ const voiceOptions = [
   { value: 'zh-CN-YunyangNeural', label: '云扬 (男声)' },
 ]
 
-function handleSave() {
-  alert('配置已保存！\n\n（实际部署时连接后端API）')
+async function handleSave() {
+  saving.value = true
+  try {
+    await axios.post('/api/admin/digital-human/config', null, {
+      params: {
+        model_type: config.value.modelType,
+        voice_type: config.value.voiceType,
+        greeting_message: config.value.greeting,
+        speed: config.value.speed,
+        pitch: config.value.pitch,
+      },
+    })
+    alert('配置已保存！')
+  } catch (e) {
+    const msg = e?.response?.data?.detail || e?.message || '未知错误'
+    alert('保存失败：' + msg)
+  } finally {
+    saving.value = false
+  }
 }
 </script>
 
@@ -47,7 +66,7 @@ function handleSave() {
             <a-textarea v-model:value="config.greeting" :rows="3" />
           </a-form-item>
           <a-form-item>
-            <a-button type="primary" @click="handleSave">保存配置</a-button>
+            <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
           </a-form-item>
         </a-form>
       </a-card>

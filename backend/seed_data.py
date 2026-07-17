@@ -15,7 +15,14 @@ async def seed():
 
     rag = RAGService()
 
-    # Clean existing data for re-seeding
+    # Skip if data already exists (safe re-run)
+    async with async_session() as db:
+        existing = await db.execute(select(ScenicSpot).limit(1))
+        if existing.scalars().first():
+            print("Seed data already exists — skipping (safe mode)")
+            return
+
+    # Fresh seed — clean existing data first
     async with async_session() as db:
         from app.models.entities import Comment, Message, Conversation, KnowledgePoint, TourRoute, DigitalHumanConfig, ScenicSpot
         for model in [Comment, Message, Conversation, KnowledgePoint, TourRoute, DigitalHumanConfig, ScenicSpot]:
