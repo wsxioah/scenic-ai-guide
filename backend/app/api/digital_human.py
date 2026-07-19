@@ -4,22 +4,18 @@ import json
 import re
 import uuid
 import os
-import socket
-import ssl
 import wave
-from urllib.parse import urlparse
 
 import edge_tts
 import miniaudio
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from app.services.llm_service import LLMService
-from app.services.rag_service import RAGService
-from app.core.config import settings
+from app.services.llm_service import get_llm_service
+from app.services.rag_service import get_rag_service
 
 router = APIRouter()
-llm_service = LLMService()
-rag_service = RAGService()
+llm_service = get_llm_service()
+rag_service = get_rag_service()
 
 AUDIO_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "static", "audio")
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -31,25 +27,6 @@ ALLOWED_VOICES = {"zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"}
 
 SYSTEM_PROMPT ="""你是景区AI导游"小景"。用热情口语化的中文回答，每次80-100字。用短句，少用逗号，句末用句号。禁止括号、markdown、表情。不知道就建议咨询工作人员。"""
 
-
-def _prewarm_llm():
-    """预热LLM API的TCP+TLS连接，减少首次请求延迟"""
-    try:
-        base = settings.llm_base_url or "https://api.deepseek.com/v1"
-        host = urlparse(base).hostname or "api.deepseek.com"
-        for addr in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP):
-            sock = socket.socket(addr[0], socket.SOCK_STREAM)
-            sock.settimeout(3)
-            sock.connect(addr[4])
-            ctx = ssl.create_default_context()
-            ssock = ctx.wrap_socket(sock, server_hostname=host)
-            ssock.close()
-            break
-    except Exception:
-        pass
-
-
-_prewarm_llm()
 
 
 def _clean_text_for_tts(text: str) -> str:

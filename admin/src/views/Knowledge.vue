@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { message } from 'ant-design-vue'
 import axios from 'axios'
 
 const points = ref([])
@@ -22,6 +23,7 @@ const columns = [
   { title: '内容', dataIndex: 'content', ellipsis: true },
   { title: '标签', dataIndex: 'tags', width: 120 },
   { title: '来源', dataIndex: 'source', width: 80 },
+  { title: '操作', dataIndex: 'action', width: 80, align: 'center' },
 ]
 
 async function fetchPoints() {
@@ -29,7 +31,7 @@ async function fetchPoints() {
   try {
     const { data } = await axios.get('/api/knowledge/points')
     points.value = data
-  } catch { /* ignore */ }
+  } catch { message.error('知识列表加载失败') }
   loading.value = false
 }
 
@@ -39,7 +41,7 @@ async function handleSearch() {
   try {
     const { data } = await axios.get('/api/knowledge/search', { params: { q: searchQuery.value, top_k: 5 } })
     searchResults.value = data.results || []
-  } catch { /* ignore */ }
+  } catch { message.error('知识检索失败') }
   searching.value = false
 }
 
@@ -49,14 +51,14 @@ async function handleCreate() {
     createVisible.value = false
     createForm.value = { title: '', content: '', tags: '', scenic_id: null }
     await fetchPoints()
-  } catch { /* ignore */ }
+  } catch { message.error('知识条目创建失败') }
 }
 
 async function handleDelete(id) {
   try {
     await axios.delete(`/api/knowledge/points/${id}`)
     await fetchPoints()
-  } catch { /* ignore */ }
+  } catch { message.error('知识条目删除失败') }
 }
 
 async function handleBatchImport() {
@@ -72,7 +74,7 @@ async function handleBatchImport() {
     importVisible.value = false
     importText.value = ''
     await fetchPoints()
-  } catch { /* ignore */ }
+  } catch (e) { message.error(e?.response?.data?.detail || '批量导入失败') }
 }
 
 async function handleExcelImport(info) {
@@ -84,7 +86,7 @@ async function handleExcelImport(info) {
     const { data } = await axios.post('/api/knowledge/import/excel', form)
     alert(data.message)
     await fetchPoints()
-  } catch { /* ignore */ }
+  } catch (e) { message.error(e?.response?.data?.detail || 'Excel导入失败') }
 }
 
 onMounted(fetchPoints)

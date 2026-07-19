@@ -1,6 +1,5 @@
-import json, base64, httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
-from pydantic import BaseModel
+import json, httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models.database import get_db
@@ -8,19 +7,6 @@ from app.models.entities import ScenicSpot, TourRoute, Comment, Announcement
 from app.core.config import settings
 
 router = APIRouter()
-
-
-class ScenicCreate(BaseModel):
-    name: str
-    category: str = "自然"
-    lat: float
-    lng: float
-    address: str = ""
-    description: str = ""
-    images: str = "[]"
-    price: float = 0
-    open_time: str = ""
-    level: str = ""
 
 
 @router.get("/spots")
@@ -82,15 +68,6 @@ async def get_spot_detail(spot_id: int, db: AsyncSession = Depends(get_db)):
         "price": spot.price, "open_time": spot.open_time,
         "level": spot.level, "pv": spot.pv, "score": spot.score,
     }
-
-
-@router.post("/spots")
-async def create_spot(spot: ScenicCreate, db: AsyncSession = Depends(get_db)):
-    s = ScenicSpot(**spot.model_dump())
-    db.add(s)
-    await db.commit()
-    await db.refresh(s)
-    return {"id": s.id, "message": "创建成功"}
 
 
 @router.get("/routes")

@@ -1,5 +1,4 @@
 """灵山景区POI种子数据"""
-import asyncio
 from app.models.database import async_session
 from app.models.entities import PoiLocation
 from sqlalchemy import select

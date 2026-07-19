@@ -8,6 +8,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 interface AvatarWebViewProps {
   style?: any;
   modelId?: 'female' | 'male';
+  onLipSyncStarted?: (id: number) => void;
 }
 
 let _webViewRef: WebView | null = null;
@@ -22,7 +23,7 @@ export function avatarSendAction(action: string, extra: Record<string, any> = {}
   }
 }
 
-export default function AvatarWebView({ style, modelId = 'female' }: AvatarWebViewProps) {
+export default function AvatarWebView({ style, modelId = 'female', onLipSyncStarted }: AvatarWebViewProps) {
   const webViewRef = useRef<WebView>(null);
   const uri = useMemo(
     () => `${SERVER_URL}/digital-human/model-lite.html?model=${modelId}&t=${Date.now()}`,
@@ -36,14 +37,16 @@ export default function AvatarWebView({ style, modelId = 'female' }: AvatarWebVi
         _webViewRef = webViewRef.current;
         console.log('[Avatar] WebView ready, ref set');
       }
-      // Forward WebView status changes (informational only)
+      if (data.lipSyncStarted) {
+        onLipSyncStarted?.(data.id);
+      }
       if (data.audioEnded) {
         console.log('[Avatar] Audio playback ended');
       }
     } catch (e) {
       console.warn('[Avatar] onMessage parse error:', e);
     }
-  }, []);
+  }, [onLipSyncStarted]);
 
   return (
     <View style={[styles.container, style]}>

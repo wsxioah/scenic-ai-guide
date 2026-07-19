@@ -7,6 +7,8 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { SERVER_URL } from '../config';
+import { Colors, Shadows } from '../theme';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 // ====== 灵山胜境 · 真实数据 ======
 const LINGSHAN_CENTER = { lat: 31.431031, lng: 120.106595 }; // 九龙灌浴（景区中心，实采）
@@ -34,12 +36,12 @@ const FACILITIES: { id: string; name: string; lat: number; lng: number; kind: 'e
   { id: 'f-park-6', name: '停车场 P6', lat: 31.429769, lng: 120.111480, kind: 'parking' },
 ];
 
-const QUICK_CATS: { kind: string; label: string }[] = [
-  { kind: 'entrance', label: '🚪 出入口' },
-  { kind: 'restroom', label: '🚻 卫生间' },
-  { kind: 'parking', label: '🅿️ 停车场' },
-  { kind: 'food', label: '🍜 餐饮' },
-  { kind: 'service', label: '🏠 服务中心' },
+const QUICK_CATS: { kind: string; label: string; icon: string }[] = [
+  { kind: 'entrance', label: '出入口', icon: 'door-open' },
+  { kind: 'restroom', label: '卫生间', icon: 'human-male-female' },
+  { kind: 'parking', label: '停车场', icon: 'parking' },
+  { kind: 'food', label: '餐饮', icon: 'silverware-fork-knife' },
+  { kind: 'service', label: '服务中心', icon: 'home-city' },
 ];
 
 const SCENIC_SPOTS: { id: string; name: string; lat: number; lng: number; category: string; desc: string }[] = [
@@ -90,6 +92,8 @@ export default function MapScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [mockLoc, setMockLoc] = useState(false);
+  const [navStart, setNavStart] = useState<{ lat: number; lng: number; name: string } | null>(null);
   const webViewRef = useRef<WebView>(null);
   const locWatchRef = useRef<Location.LocationSubscription | null>(null);
   const userLocRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -169,6 +173,24 @@ export default function MapScreen() {
     postToMap({ type: 'centerOn', lat: focus.lat, lng: focus.lng });
   }, [route.params, mapReady, postToMap]);
 
+  // Route navigation from SearchScreen
+  useEffect(() => {
+    const rn = route.params?.routeNav;
+    if (!rn || !mapReady) return;
+    const { start, end } = rn;
+    // Center on destination
+    postToMap({ type: 'centerOn', lat: end.lat, lng: end.lng });
+    // Draw walking route — 0/0 means "use my location"
+    setTimeout(() => {
+      postToMap({
+        type: 'findWalkingRoute',
+        lat: end.lat, lng: end.lng,
+        fromLat: start.lat || undefined,
+        fromLng: start.lng || undefined,
+      });
+    }, 500);
+  }, [route.params, mapReady, postToMap]);
+
   const followRoute = useCallback((routeId: string) => {
     setSelectedRoute(routeId);
     const rt = RECOMMENDED_ROUTES.find(r => r.id === routeId);
@@ -186,6 +208,14 @@ export default function MapScreen() {
     console.log('[GPS] sending to map:', userLoc.lat, userLoc.lng);
     postToMap({ type: 'setUserLocation', lat: userLoc.lat, lng: userLoc.lng });
   }, [mapReady, userLoc, postToMap]);
+
+  // Mock location for navigation testing — sets user position to scenic center
+  useEffect(() => {
+    if (!mapReady) return;
+    if (mockLoc) {
+      postToMap({ type: 'setUserLocation', lat: LINGSHAN_CENTER.lat, lng: LINGSHAN_CENTER.lng });
+    }
+  }, [mapReady, mockLoc, postToMap]);
 
   const handleMessage = useCallback((event: WebViewMessageEvent) => {
     try {
@@ -213,8 +243,9 @@ export default function MapScreen() {
 
   const openNavigation = (lat: number, lng: number, name: string) => {
     const encodedName = encodeURIComponent(name);
-    const origin = userLocRef.current
-      ? `&origin=latlng:${userLocRef.current.lat},${userLocRef.current.lng}|name:我的位置`
+    const originLoc = mockLoc ? LINGSHAN_CENTER : userLocRef.current;
+    const origin = originLoc
+      ? `&origin=latlng:${originLoc.lat},${originLoc.lng}|name=我的位置`
       : '';
     const url = `https://api.map.baidu.com/direction?destination=latlng:${lat},${lng}|name:${encodedName}${origin}&mode=walking&region=无锡&output=html&src=scenicAiGuide`;
     Linking.openURL(url).catch(() => {
@@ -266,16 +297,13 @@ export default function MapScreen() {
 
       {/* Info & Routes toggle button */}
       <TouchableOpacity style={styles.infoToggle} onPress={() => setShowInfo(!showInfo)}>
-        <Text style={{ fontSize: 16 }}>{showInfo ? '✕' : 'ℹ'}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.ink }}>{showInfo ? '✕' : '路线'}</Text>
       </TouchableOpacity>
 
       {/* Bottom info / routes panel */}
       {showInfo && (
         <View style={styles.infoPanel}>
           <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-            <Text style={styles.infoTitle}>景区介绍</Text>
-            <Text style={styles.infoText}>{SCENIC_INTRO}</Text>
-
             <Text style={styles.sectionTitle}>推荐游览路线</Text>
             {RECOMMENDED_ROUTES.map(r => (
               <TouchableOpacity
@@ -290,6 +318,9 @@ export default function MapScreen() {
                 <Text style={styles.routeDesc} numberOfLines={2}>{r.desc}</Text>
               </TouchableOpacity>
             ))}
+
+            <Text style={[styles.sectionTitle, { marginTop: 12 }]}>景区介绍</Text>
+            <Text style={styles.infoText}>{SCENIC_INTRO}</Text>
 
             <TouchableOpacity style={styles.panelClose} onPress={() => setShowInfo(false)}>
               <Text style={styles.panelCloseText}>收起</Text>
@@ -315,18 +346,39 @@ export default function MapScreen() {
         <View style={styles.catListPopup}>
           <View style={styles.catListHeader}>
             <Text style={styles.catListTitle}>{QUICK_CATS.find(c => c.kind === activeCategory)?.label}</Text>
-            <TouchableOpacity onPress={() => setActiveCategory(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={() => { setActiveCategory(null); setNavStart(null); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={styles.catListClose}>✕</Text>
             </TouchableOpacity>
           </View>
+          {navStart && (
+            <View style={styles.navStartBar}>
+              <Text style={styles.navStartText}>起点: {navStart.name}</Text>
+              <TouchableOpacity onPress={() => setNavStart(null)}>
+                <Text style={styles.navStartClear}>清除</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           <ScrollView style={{ maxHeight: 180 }} showsVerticalScrollIndicator={false}>
             {FACILITIES.filter(f => f.kind === activeCategory).map(f => (
               <View key={f.id} style={styles.catListItem}>
-                <TouchableOpacity style={{ flex: 1 }} onPress={() => postToMap({ type: 'centerOn', lat: f.lat, lng: f.lng })}>
-                  <Text style={styles.catListItemName}>📍 {f.name}</Text>
+                <TouchableOpacity style={styles.catListItemLeft} onPress={() => postToMap({ type: 'centerOn', lat: f.lat, lng: f.lng })}>
+                  <Ionicons name="location" size={14} color={Colors.goldDark} />
+                  <Text style={styles.catListItemName}>{f.name}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => postToMap({ type: 'findWalkingRoute', lat: f.lat, lng: f.lng })}>
-                  <Text style={styles.catListItemGo}>🧭 导航</Text>
+                <TouchableOpacity style={styles.catListItemBtn} onPress={() => setNavStart({ lat: f.lat, lng: f.lng, name: f.name })}>
+                  <Ionicons name="flag" size={13} color={Colors.jade} />
+                  <Text style={[styles.catListItemGo, { color: Colors.jade }]}>起点</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.catListItemBtn}
+                  onPress={() => postToMap({
+                    type: 'findWalkingRoute',
+                    lat: f.lat, lng: f.lng,
+                    fromLat: navStart?.lat, fromLng: navStart?.lng,
+                  })}
+                >
+                  <Ionicons name="navigate" size={13} color={Colors.goldDark} />
+                  <Text style={styles.catListItemGo}>导航</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -341,7 +393,7 @@ export default function MapScreen() {
       {!showInfo && (
         <View style={styles.bottomBar}>
           <TouchableOpacity style={styles.searchBar} activeOpacity={0.85} onPress={() => navigation.navigate('Search')}>
-            <Text style={styles.searchBarIcon}>🔍</Text>
+            <Ionicons name="search" size={16} color={Colors.textMuted} style={{ marginRight: 8 }} />
             <Text style={styles.searchBarPlaceholder}>请输入搜索地点</Text>
           </TouchableOpacity>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickRow}>
@@ -353,6 +405,11 @@ export default function MapScreen() {
                   style={[styles.quickChip, active && styles.quickChipActive]}
                   onPress={() => toggleCategory(c.kind)}
                 >
+                  <MaterialCommunityIcons
+                    name={c.icon as any}
+                    size={13}
+                    color={active ? Colors.white : Colors.goldDark}
+                  />
                   <Text style={[styles.quickChipText, active && styles.quickChipTextActive]}>{c.label}</Text>
                 </TouchableOpacity>
               );
@@ -364,12 +421,19 @@ export default function MapScreen() {
       {/* Map control buttons */}
       <View style={styles.mapControls}>
         <TouchableOpacity style={styles.mapCtrlBtn} onPress={goToMyLocation}>
-          <Text style={styles.mapCtrlIcon}>◎</Text>
+          <Ionicons name="locate" size={20} color={Colors.goldDark} />
           <Text style={styles.mapCtrlLabel}>定位</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.mapCtrlBtn} onPress={goToScenicCenter}>
-          <Text style={styles.mapCtrlIcon}>🏯</Text>
+          <MaterialCommunityIcons name="bank" size={20} color={Colors.goldDark} />
           <Text style={styles.mapCtrlLabel}>景区</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.mapCtrlBtn, mockLoc && { backgroundColor: Colors.jade }]}
+          onPress={() => setMockLoc(!mockLoc)}
+        >
+          <MaterialCommunityIcons name="crosshairs-gps" size={20} color={mockLoc ? Colors.white : Colors.goldDark} />
+          <Text style={[styles.mapCtrlLabel, mockLoc && { color: Colors.white }]}>模拟</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -378,22 +442,21 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  map: { flex: 1, backgroundColor: '#1a1a2e' },
+  map: { flex: 1, backgroundColor: Colors.ink },
   topBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     paddingTop: Platform.OS === 'ios' ? 54 : 40,
     paddingBottom: 10, paddingHorizontal: 16,
     backgroundColor: 'rgba(255,255,255,0.95)',
-    borderBottomWidth: 0.5, borderBottomColor: '#E5E7EB',
+    borderBottomWidth: 0.5, borderBottomColor: Colors.divider,
   },
-  topBarTitle: { color: '#1F2937', fontSize: 17, fontWeight: '700' },
-  topBarSub: { color: '#6B7280', fontSize: 11, marginTop: 2 },
+  topBarTitle: { color: Colors.ink, fontSize: 17, fontWeight: '700' },
+  topBarSub: { color: Colors.textSecondary, fontSize: 11, marginTop: 2 },
   infoToggle: {
     position: 'absolute', right: 12, top: Platform.OS === 'ios' ? 100 : 86,
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-    elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15, shadowRadius: 3,
+    backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center',
+    ...Shadows.sm,
   },
   infoPanel: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -401,80 +464,85 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.97)',
     borderTopLeftRadius: 16, borderTopRightRadius: 16,
     paddingHorizontal: 16, paddingTop: 16, paddingBottom: 24,
-    elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
+    elevation: 10, shadowColor: '#8B7355', shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.1, shadowRadius: 8,
   },
-  infoTitle: { color: '#1F2937', fontSize: 16, fontWeight: '700', marginBottom: 6 },
-  infoText: { color: '#4B5563', fontSize: 13, lineHeight: 20, marginBottom: 12 },
-  sectionTitle: { color: '#1F2937', fontSize: 15, fontWeight: '700', marginBottom: 8, marginTop: 4 },
+  infoText: { color: Colors.text, fontSize: 13, lineHeight: 20, marginBottom: 12 },
+  sectionTitle: { color: Colors.ink, fontSize: 15, fontWeight: '700', marginBottom: 8, marginTop: 4 },
   routeCard: {
-    backgroundColor: '#F9FAFB', borderRadius: 10, padding: 12, marginBottom: 8,
-    borderWidth: 1, borderColor: '#E5E7EB',
+    backgroundColor: Colors.goldSurface, borderRadius: 10, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: Colors.divider,
   },
-  routeCardActive: { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
+  routeCardActive: { borderColor: Colors.goldDark, backgroundColor: Colors.goldLight },
   routeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  routeTitle: { color: '#1F2937', fontSize: 13, fontWeight: '600' },
-  routeDuration: { color: '#2563EB', fontSize: 11 },
-  routeDesc: { color: '#6B7280', fontSize: 11, lineHeight: 16 },
+  routeTitle: { color: Colors.ink, fontSize: 13, fontWeight: '600' },
+  routeDuration: { color: Colors.goldDark, fontSize: 11 },
+  routeDesc: { color: Colors.textSecondary, fontSize: 11, lineHeight: 16 },
   panelClose: { alignItems: 'center', marginTop: 8, paddingVertical: 8 },
-  panelCloseText: { color: '#6B7280', fontSize: 13 },
+  panelCloseText: { color: Colors.textSecondary, fontSize: 13 },
   errorBanner: {
     position: 'absolute', right: 12, top: 132,
-    backgroundColor: 'rgba(254,242,242,0.95)', paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 6, borderWidth: 0.5, borderColor: '#FECACA',
+    backgroundColor: 'rgba(181,69,58,0.08)', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 6, borderWidth: 0.5, borderColor: Colors.vermilionLight,
     flexDirection: 'row', alignItems: 'center', gap: 8,
   },
-  errorBannerText: { color: '#991B1B', fontSize: 12 },
-  errorBannerBtn: { color: '#2563EB', fontSize: 12, fontWeight: '600' },
+  errorBannerText: { color: Colors.vermilion, fontSize: 12 },
+  errorBannerBtn: { color: Colors.goldDark, fontSize: 12, fontWeight: '600' },
   mapControls: {
     position: 'absolute', right: 12, top: 112,
     alignItems: 'center', gap: 8,
   },
   mapCtrlBtn: {
     width: 48, height: 48, borderRadius: 12,
-    backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
-    elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15, shadowRadius: 3,
+    backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center',
+    ...Shadows.sm,
   },
-  mapCtrlIcon: { fontSize: 20 },
-  mapCtrlLabel: { fontSize: 9, color: '#6B7280', marginTop: 1 },
+  mapCtrlLabel: { fontSize: 9, color: Colors.textSecondary, marginTop: 1 },
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 12, paddingTop: 10,
     paddingBottom: Platform.OS === 'ios' ? 16 : 12,
     backgroundColor: 'rgba(255,255,255,0.96)',
-    borderTopWidth: 0.5, borderTopColor: '#E5E7EB',
+    borderTopWidth: 0.5, borderTopColor: Colors.divider,
   },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#F3F4F6', borderRadius: 22,
+    backgroundColor: Colors.surface, borderRadius: 22,
     paddingHorizontal: 16, height: 44,
-    borderWidth: 1, borderColor: '#E5E7EB',
+    borderWidth: 1, borderColor: Colors.divider,
   },
-  searchBarIcon: { fontSize: 15, marginRight: 8 },
-  searchBarPlaceholder: { fontSize: 14, color: '#9CA3AF' },
+  searchBarPlaceholder: { fontSize: 14, color: Colors.textMuted },
   quickRow: { paddingTop: 10, paddingRight: 12 },
   quickChip: {
-    backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 16, borderWidth: 0.5, borderColor: '#D1D5DB', marginRight: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.white, paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 16, borderWidth: 0.5, borderColor: Colors.divider, marginRight: 8,
   },
-  quickChipActive: { backgroundColor: '#8B5E2B', borderColor: '#8B5E2B' },
-  quickChipText: { fontSize: 12, color: '#374151' },
-  quickChipTextActive: { color: '#FFFFFF', fontWeight: '600' },
+  quickChipActive: { backgroundColor: Colors.goldDark, borderColor: Colors.goldDark },
+  quickChipText: { fontSize: 12, color: Colors.text },
+  quickChipTextActive: { color: Colors.white, fontWeight: '600' },
   catListPopup: {
     position: 'absolute', left: 8, right: 8, bottom: 110,
-    backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12,
-    elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15, shadowRadius: 8,
+    backgroundColor: Colors.white, borderRadius: 12, padding: 12,
+    ...Shadows.md,
   },
   catListHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  catListTitle: { fontSize: 14, fontWeight: '700', color: '#1F2937' },
-  catListClose: { fontSize: 14, color: '#9CA3AF' },
+  catListTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  catListClose: { fontSize: 14, color: Colors.textMuted },
+  navStartBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: Colors.goldSurface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
+    marginBottom: 4, borderWidth: 1, borderColor: Colors.goldLight,
+  },
+  navStartText: { fontSize: 12, color: Colors.goldDark, fontWeight: '600' },
+  navStartClear: { fontSize: 12, color: Colors.vermilion, fontWeight: '600' },
   catListItem: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 10, borderTopWidth: 0.5, borderTopColor: '#F3F4F6',
+    paddingVertical: 10, borderTopWidth: 0.5, borderTopColor: Colors.surface,
   },
-  catListItemName: { fontSize: 13, color: '#374151' },
-  catListItemGo: { fontSize: 12, color: '#8B5E2B', fontWeight: '600', paddingHorizontal: 6 },
-  catListEmpty: { fontSize: 12, color: '#9CA3AF', paddingVertical: 12, textAlign: 'center' },
+  catListItemLeft: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  catListItemBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 6 },
+  catListItemName: { fontSize: 13, color: Colors.text },
+  catListItemGo: { fontSize: 12, color: Colors.goldDark, fontWeight: '600', paddingHorizontal: 6 },
+  catListEmpty: { fontSize: 12, color: Colors.textMuted, paddingVertical: 12, textAlign: 'center' },
 });

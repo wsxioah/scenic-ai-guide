@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import String, Integer, Float, Text, DateTime, Boolean, JSON, ForeignKey
+from sqlalchemy import String, Integer, Float, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.database import Base
 
@@ -145,6 +145,47 @@ class PoiLocation(Base):
     icon: Mapped[str | None] = mapped_column(String(100))  # emoji or predefined key
     is_published: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+
+
+class TouristBehavior(Base):
+    """游客行为分析数据 — 来自赛方140K条数据"""
+    __tablename__ = "tourist_behaviors"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tourist_id: Mapped[str] = mapped_column(String(20), index=True)
+    age: Mapped[int] = mapped_column(Integer)
+    gender: Mapped[str] = mapped_column(String(4))
+    attraction_name: Mapped[str] = mapped_column(String(100), index=True)
+    attraction_type: Mapped[str] = mapped_column(String(30), index=True)
+    visit_date: Mapped[datetime.datetime] = mapped_column(DateTime, index=True)
+    stay_duration: Mapped[float] = mapped_column(Float)
+    ticket_cost: Mapped[float] = mapped_column(Float, default=0)
+    food_cost: Mapped[float] = mapped_column(Float, default=0)
+    shopping_cost: Mapped[float] = mapped_column(Float, default=0)
+    transport_cost: Mapped[float] = mapped_column(Float, default=0)
+    entertainment_cost: Mapped[float] = mapped_column(Float, default=0)
+    total_cost: Mapped[float] = mapped_column(Float)
+    group_size: Mapped[int] = mapped_column(Integer, default=1)
+    satisfaction: Mapped[int] = mapped_column(Integer)  # 1-5
+
+
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    scenic_spot_id: Mapped[int] = mapped_column(ForeignKey("scenic_spots.id"), index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+
+
+class FAQ(Base):
+    __tablename__ = "faqs"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    question: Mapped[str] = mapped_column(String(500))
+    answer: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(50), default="general")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 
 

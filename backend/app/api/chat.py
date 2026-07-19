@@ -1,95 +1,11 @@
-import asyncio
-import json
-import time
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.models.database import get_db
 from app.models.entities import Conversation, Message, User
-from app.services.rag_service import RAGService
-from app.services.llm_service import LLMService
 from app.core.auth import get_current_user
 
 router = APIRouter()
-rag_service = RAGService()
-llm_service = LLMService()
-
-
-class ChatRequest(BaseModel):
-    message: str
-    conversation_id: int | None = None
-    user_id: int | None = None
-
-
-@router.post("/stream")
-async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
-    """SSE流式对话接口"""
-    # 创建或获取对话
-    conv_id = req.conversation_id
-    if not conv_id:
-        conv = Conversation(
-            user_id=req.user_id or 1,
-            title=req.message[:30] or "新对话"
-        )
-        db.add(conv)
-        await db.commit()
-        await db.refresh(conv)
-        conv_id = conv.id
-
-    # 保存用户消息
-    user_msg = Message(conversation_id=conv_id, role="user", content=req.message)
-    db.add(user_msg)
-    await db.commit()
-
-    # 检索知识
-    knowledge_results = await rag_service.search(req.message, top_k=3)
-
-    async def generate():
-        try:
-            # 发送元数据
-            yield f"event: metadata\ndata: {json.dumps({'conversation_id': conv_id, 'knowledge_count': len(knowledge_results)}, ensure_ascii=False)}\n\n"
-
-            # 构建prompt
-            context = "\n".join([f"- {k['title']}: {k['content'][:300]}" for k in knowledge_results])
-            system_prompt = f"""你是景区AI导览助手。基于以下知识回答游客问题，保持友好热情。
-如果知识库中没有相关信息，请诚实告知并建议游客咨询景区工作人员。
-
-知识库参考：
-{context}"""
-
-            full_answer = ""
-            async for token in llm_service.chat_stream(
-                system_prompt=system_prompt,
-                user_message=req.message
-            ):
-                full_answer += token
-                yield f"event: answer_fragment\ndata: {json.dumps({'content': token}, ensure_ascii=False)}\n\n"
-                await asyncio.sleep(0.02)
-
-            # 保存AI回复
-            ai_msg = Message(conversation_id=conv_id, role="assistant", content=full_answer)
-            db.add(ai_msg)
-            await db.commit()
-
-            # TTS音频生成通知
-            yield f"event: tts_ready\ndata: {json.dumps({'message_id': ai_msg.id}, ensure_ascii=False)}\n\n"
-
-            yield f"event: done\ndata: {json.dumps({'status': 'completed'})}\n\n"
-
-        except Exception as e:
-            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
 
 
 @router.get("/history")

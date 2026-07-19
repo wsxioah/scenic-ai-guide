@@ -30,7 +30,7 @@ class LipSync {
 
         this.source = this.audioContext.createMediaElementSource(audioElement);
         this.analyser = this.audioContext.createAnalyser();
-        this.analyser.fftSize = 256;
+        this.analyser.fftSize = 128;
         this.source.connect(this.analyser);
 
         // Only connect to destination if NOT muted (RN handles audio playback separately)
@@ -60,7 +60,7 @@ class LipSync {
         var MAX = 0.35;
         var raw = Math.max(0, Math.min(1, (rms - SILENCE) / (MAX - SILENCE)));
 
-        this.smoothedRMS = this.smoothedRMS * 0.3 + raw * 0.7;
+        this.smoothedRMS = this.smoothedRMS * 0.1 + raw * 0.9;
         var mouthOpen = Math.max(raw, this.smoothedRMS * 0.6);
 
         if (this.onMouthUpdate) {

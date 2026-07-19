@@ -114,10 +114,10 @@ function makeCenterIcon(){
 
 // Facility / spot markers (coords are BD09, picked from Baidu Maps — no conversion)
 var FAC_COLORS={entrance:"#3B82F6",restroom:"#EC4899",parking:"#F59E0B",service:"#10B981",food:"#F97316"};
-var _spotMarkers=[],_facMarkers=[],_routeLine=null,_walkingRoute=null,_userBd09=null,_walkingLabels=[];
+var _spotMarkers=[],_facMarkers=[],_routeLine=null,_walkingRoute=null,_userBd09=null;
 function makeIcon(color,shape){var svg=shape==="pin"?'<svg xmlns="http://www.w3.org/2000/svg" width="28" height="42" viewBox="0 0 28 42"><filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.3"/></filter><path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 28 14 28s14-17.5 14-28C28 6.3 21.7 0 14 0z" fill="'+color+'" filter="url(#s)"/><circle cx="14" cy="14" r="6" fill="#fff"/></svg>':'<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="10" fill="'+color+'" stroke="#fff" stroke-width="2"/></svg>';return "data:image/svg+xml;base64,"+btoa(svg)}
 function setFacilities(facilities){_facMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_facMarkers=[];if(!facilities||!facilities.length){log("fac:0");return}facilities.forEach(function(f){try{var pt=new BMapGL.Point(f.lng,f.lat);var color=FAC_COLORS[f.kind]||"#6B7280";var icon=new BMapGL.Icon(makeIcon(color,"dot"),new BMapGL.Size(22,22),{anchor:new BMapGL.Size(11,11),imageSize:new BMapGL.Size(22,22)});var marker=new BMapGL.Marker(pt,{icon:icon});marker._fac=f;marker.addEventListener("click",function(){try{var w=new BMapGL.InfoWindow('<div style="font-family:sans-serif;padding:2px 4px;font-size:12px"><b>'+this._fac.name+"</b></div>",{width:140,height:36});_map.openInfoWindow(w,this.getPosition())}catch(e){}});_map.addOverlay(marker);_facMarkers.push(marker)}catch(e){}});log("fac:"+facilities.length)}
-function setSpots(spots){_spotMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_spotMarkers=[];if(!spots||!spots.length)return;spots.forEach(function(s){try{var pt=new BMapGL.Point(s.lng,s.lat);var icon=new BMapGL.Icon(makeIcon("#a855f7","pin"),new BMapGL.Size(28,42),{anchor:new BMapGL.Size(14,42),imageSize:new BMapGL.Size(28,42)});var marker=new BMapGL.Marker(pt,{icon:icon});_map.addOverlay(marker);_spotMarkers.push(marker);var label=new BMapGL.Label(s.name,{position:pt,offset:new BMapGL.Size(-16,-40)});label.setStyle({color:"#fff",background:"rgba(0,0,0,0.75)",border:"none",borderRadius:"3px",padding:"1px 5px",fontSize:"10px",whiteSpace:"nowrap"});_map.addOverlay(label);_spotMarkers.push(label)}catch(e){}})}
+function setSpots(spots){_spotMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_spotMarkers=[];if(!spots||!spots.length)return;spots.forEach(function(s){try{var pt=new BMapGL.Point(s.lng,s.lat);var icon=new BMapGL.Icon(makeIcon("#a855f7","pin"),new BMapGL.Size(28,42),{anchor:new BMapGL.Size(14,42),imageSize:new BMapGL.Size(28,42)});var marker=new BMapGL.Marker(pt,{icon:icon});marker._spot=s;_map.addOverlay(marker);_spotMarkers.push(marker);var label=new BMapGL.Label(s.name,{position:pt,offset:new BMapGL.Size(-16,-40)});label.setStyle({color:"#fff",background:"rgba(0,0,0,0.75)",border:"none",borderRadius:"3px",padding:"1px 5px",fontSize:"10px",whiteSpace:"nowrap"});_map.addOverlay(label);_spotMarkers.push(label);marker.addEventListener("click",function(){try{window.ReactNativeWebView.postMessage(JSON.stringify({type:"navigate",lat:this._spot.lat,lng:this._spot.lng,name:this._spot.name}))}catch(e){}})}catch(e){}})}
 
 // Stored scenic coords are already BD09 (picked from Baidu Maps)
 var CENTER_BD09 = [120.106595, 31.431031]; // 九龙灌浴（实采坐标）
@@ -158,7 +158,10 @@ function setRoutePath(path){
   if(_routeLine){try{_map.removeOverlay(_routeLine)}catch(e){}}
   if(!path||!path.length)return;
   try{
-    var pts=path.map(function(p){return new BMapGL.Point(p.lng,p.lat)});
+    var pts=path.map(function(p){
+      var bd=wgs84ToBd09(p.lng,p.lat);
+      return new BMapGL.Point(bd[0],bd[1]);
+    });
     _routeLine=new BMapGL.Polyline(pts,{
       strokeColor:"#3B82F6",strokeWeight:4,strokeOpacity:0.8,
       strokeStyle:"dashed",enableEditing:false
@@ -181,37 +184,22 @@ function setUserLocation(lat,lng){
   }catch(e){log("GPSerr:"+e)}
 }
 
-function findWalkingRoute(toLat,toLng){
-  // Clear previous navigation
-  if(_walkingRoute){try{_map.removeOverlay(_walkingRoute)}catch(e){}}
-  _walkingLabels.forEach(function(l){try{_map.removeOverlay(l)}catch(e){}});
-  _walkingLabels=[];
-  if(!_userBd09){log("nav:no user loc");return}
+function findWalkingRoute(toLat,toLng,fromLat,fromLng){
+  if(_walkingRoute){try{_walkingRoute.clearResults()}catch(e){}}
+  var slng=fromLng!=null?fromLng:_userBd09?.[0];
+  var slat=fromLat!=null?fromLat:_userBd09?.[1];
+  if(slng==null||slat==null){log("nav:no start");return}
   try{
-    var pts=[new BMapGL.Point(_userBd09[0],_userBd09[1]),new BMapGL.Point(toLng,toLat)];
-    _walkingRoute=new BMapGL.Polyline(pts,{
-      strokeColor:"#10B981",strokeWeight:4,strokeOpacity:0.9,
-      strokeStyle:"solid",enableEditing:false
+    var start=new BMapGL.Point(slng,slat);
+    var end=new BMapGL.Point(toLng,toLat);
+    _walkingRoute=new BMapGL.WalkingRoute(_map,{renderOptions:{map:_map,autoViewport:true}});
+    _walkingRoute.search(start,end);
+    _walkingRoute.setSearchCompleteCallback(function(results){
+      try{
+        var ok=results&&(results.getStatus()===0||results.status===0);
+        log("nav:"+(ok?"ok":"fail"));
+      }catch(e){log("nav:done")}
     });
-    _map.addOverlay(_walkingRoute);
-    // Calculate straight-line distance (Haversine on BD09 coords — close enough for short distances)
-    var R=6371000;
-    var dLat=(toLat-_userBd09[1])*Math.PI/180;
-    var dLng=(toLng-_userBd09[0])*Math.PI/180;
-    var a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(_userBd09[1]*Math.PI/180)*Math.cos(toLat*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);
-    var dist=Math.round(R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
-    var min=Math.round(dist/80); // ~80m/min walking
-    log("nav:"+dist+"m ~"+min+"min");
-    _map.setViewport(pts,{margins:[60,30,60,30]});
-    // Show distance label
-    try{
-      var midPt=new BMapGL.Point((_userBd09[0]+toLng)/2,(_userBd09[1]+toLat)/2);
-      var label=new BMapGL.Label((dist<1000?dist+"m":(dist/1000).toFixed(1)+"km")+" 步行约"+min+"分钟",{position:midPt,offset:new BMapGL.Size(-40,-20)});
-      label.setStyle({color:"#fff",background:"rgba(16,185,129,0.9)",border:"none",borderRadius:"4px",padding:"2px 8px",fontSize:"11px",whiteSpace:"nowrap"});
-      _map.addOverlay(label);
-      if(!_walkingLabels)_walkingLabels=[];
-      _walkingLabels.push(label);
-    }catch(e){}
   }catch(e){log("navErr:"+e)}
 }
 
@@ -245,7 +233,7 @@ function _onMapMsg(e){
     else if(d.type==="setFacilities") setFacilities(d.facilities);
     else if(d.type==="setSpots") setSpots(d.spots);
     else if(d.type==="setRoutePath") setRoutePath(d.path);
-    else if(d.type==="findWalkingRoute") findWalkingRoute(d.lat,d.lng);
+    else if(d.type==="findWalkingRoute") findWalkingRoute(d.lat,d.lng,d.fromLat,d.fromLng);
   }catch(ex){}
 }
 document.addEventListener("message",_onMapMsg);

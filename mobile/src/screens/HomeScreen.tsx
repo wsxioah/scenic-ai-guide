@@ -4,8 +4,9 @@ import {
   RefreshControl, StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../services/api';
-import { Colors, Spacing, BorderRadius, Shadows, Typography } from '../theme';
+import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
 import { SHOW_PHOTO_RECOGNITION } from '../config';
 
 export default function HomeScreen() {
@@ -47,11 +48,17 @@ export default function HomeScreen() {
         <View style={styles.heroPattern}>
           <Text style={styles.heroDecoration}>卍</Text>
         </View>
+        <View style={styles.heroCircle1} />
+        <View style={styles.heroCircle2} />
         <View style={styles.heroContent}>
+          <View style={styles.heroSeal}>
+            <Text style={styles.heroSealText}>禅</Text>
+          </View>
           <Text style={styles.heroTitle}>灵山胜境</Text>
           <Text style={styles.heroSubtitle}>AI数字人 · 智慧导览</Text>
           <View style={styles.heroBadge}>
-            <Text style={styles.heroBadgeText}>🏔 国家5A级旅游景区</Text>
+            <Ionicons name="trophy" size={12} color={Colors.goldLight} />
+            <Text style={styles.heroBadgeText}>国家5A级旅游景区</Text>
           </View>
         </View>
       </View>
@@ -59,7 +66,10 @@ export default function HomeScreen() {
       {/* ── Emergency Banner ── */}
       {announcements.filter((a: any) => a.type === 'emergency').map((a: any) => (
         <View key={a.id} style={styles.emergencyBanner}>
-          <Text style={styles.emergencyTitle}>⚠️ 紧急通知</Text>
+          <View style={styles.emergencyTitleRow}>
+            <Ionicons name="warning" size={15} color={Colors.vermilion} />
+            <Text style={styles.emergencyTitle}>紧急通知</Text>
+          </View>
           <Text style={styles.emergencyText}>{a.title}: {a.content}</Text>
         </View>
       ))}
@@ -72,14 +82,14 @@ export default function HomeScreen() {
       >
         <View style={styles.aiCardInner}>
           <View style={styles.aiAvatarRing}>
-            <Text style={styles.aiAvatar}>🤖</Text>
+            <MaterialCommunityIcons name="robot-excited" size={30} color={Colors.goldDark} />
           </View>
           <View style={styles.aiCardContent}>
             <Text style={styles.aiCardTitle}>AI 智能导览</Text>
             <Text style={styles.aiCardSubtitle}>语音对话 · 数字人讲解 · 实时问答</Text>
           </View>
           <View style={styles.aiArrow}>
-            <Text style={styles.aiArrowText}>▸</Text>
+            <Ionicons name="chevron-forward" size={18} color={Colors.goldDark} />
           </View>
         </View>
         <View style={styles.aiCardGlow} />
@@ -90,17 +100,18 @@ export default function HomeScreen() {
         <Text style={styles.sectionLabel}>快捷服务</Text>
         <View style={styles.quickGrid}>
           {[
-            { label: '景点列表', icon: '🏛', screen: 'Scenic', desc: '浏览名胜' },
-            { label: '景区地图', icon: '🗺️', screen: 'Map', desc: '导览导航' },
-            ...(SHOW_PHOTO_RECOGNITION ? [{ label: '拍照识景', icon: '📷', screen: 'Chat', desc: '一键识别' }] : []),
+            { label: '景点列表', icon: 'bank', screen: 'Scenic', desc: '浏览名胜', bg: Colors.goldSurface, fg: Colors.goldDark },
+            { label: '景区地图', icon: 'map-marker-radius', screen: 'Map', desc: '导览导航', bg: Colors.jadeLight, fg: Colors.jade },
+            ...(SHOW_PHOTO_RECOGNITION ? [{ label: '拍照识景', icon: 'camera-iris', screen: 'Chat', desc: '一键识别', bg: Colors.lapisLight, fg: Colors.lapis }] : []),
           ].map((action) => (
             <TouchableOpacity
               key={action.label}
               style={styles.quickItem}
               onPress={() => navigation.navigate(action.screen)}
+              activeOpacity={0.85}
             >
-              <View style={styles.quickIconWrap}>
-                <Text style={styles.quickIcon}>{action.icon}</Text>
+              <View style={[styles.quickIconWrap, { backgroundColor: action.bg }]}>
+                <MaterialCommunityIcons name={action.icon as any} size={24} color={action.fg} />
               </View>
               <Text style={styles.quickLabel}>{action.label}</Text>
               <Text style={styles.quickDesc}>{action.desc}</Text>
@@ -113,7 +124,10 @@ export default function HomeScreen() {
       {announcements.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>📢 景区公告</Text>
+            <View style={styles.sectionTitleRow}>
+              <MaterialCommunityIcons name="bullhorn" size={17} color={Colors.goldDark} />
+              <Text style={styles.sectionLabel}>景区公告</Text>
+            </View>
             <TouchableOpacity>
               <Text style={styles.sectionMore}>更多 ›</Text>
             </TouchableOpacity>
@@ -133,7 +147,10 @@ export default function HomeScreen() {
       {/* ── Hot Spots ── */}
       <View style={[styles.section, styles.sectionLast]}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>🔥 热门景点</Text>
+          <View style={styles.sectionTitleRow}>
+            <MaterialCommunityIcons name="fire" size={19} color={Colors.vermilion} />
+            <Text style={styles.sectionLabel}>热门景点</Text>
+          </View>
           <TouchableOpacity onPress={() => navigation.navigate('Scenic')}>
             <Text style={styles.sectionMore}>全部 ›</Text>
           </TouchableOpacity>
@@ -144,8 +161,8 @@ export default function HomeScreen() {
             style={styles.spotCard}
             onPress={() => navigation.navigate('ScenicDetail', { spotId: spot.id })}
           >
-            <View style={styles.spotRank}>
-              <Text style={styles.spotRankNum}>{i + 1}</Text>
+            <View style={[styles.spotRank, i < 3 && RANK_STYLES[i]]}>
+              <Text style={[styles.spotRankNum, i < 3 && styles.spotRankNumTop]}>{i + 1}</Text>
             </View>
             <View style={styles.spotInfo}>
               <View style={styles.spotNameRow}>
@@ -155,7 +172,12 @@ export default function HomeScreen() {
               <Text style={styles.spotCategory}>{spot.category} · 开放时间 {spot.open_time || '全天'}</Text>
               <View style={styles.spotFooter}>
                 <Text style={styles.spotPrice}>¥{spot.price || 0}</Text>
-                <Text style={styles.spotStats}>👁 {spot.pv} · ⭐ {spot.score ?? '--'}</Text>
+                <View style={styles.spotStatsRow}>
+                  <Ionicons name="eye" size={11} color={Colors.textMuted} />
+                  <Text style={styles.spotStats}> {spot.pv}   </Text>
+                  <Ionicons name="star" size={11} color={Colors.warning} />
+                  <Text style={styles.spotStats}> {spot.score ?? '--'}</Text>
+                </View>
               </View>
             </View>
           </TouchableOpacity>
@@ -165,12 +187,18 @@ export default function HomeScreen() {
   );
 }
 
+const RANK_STYLES = [
+  { backgroundColor: '#D4A43A' },   // 金
+  { backgroundColor: '#9AA5B1' },   // 银
+  { backgroundColor: '#B08357' },   // 铜
+];
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.paper },
 
   // Hero
   hero: {
-    paddingTop: 60, paddingBottom: 36, paddingHorizontal: Spacing.xl,
+    paddingTop: 56, paddingBottom: 40, paddingHorizontal: Spacing.xl,
     backgroundColor: Colors.goldDark,
     borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
     overflow: 'hidden',
@@ -180,12 +208,32 @@ const styles = StyleSheet.create({
     opacity: 0.08,
   },
   heroDecoration: { fontSize: 180, color: Colors.goldLight },
+  heroCircle1: {
+    position: 'absolute', width: 200, height: 200, borderRadius: 100,
+    borderWidth: 1, borderColor: 'rgba(245,236,215,0.18)',
+    top: -60, left: -60,
+  },
+  heroCircle2: {
+    position: 'absolute', width: 140, height: 140, borderRadius: 70,
+    borderWidth: 1, borderColor: 'rgba(245,236,215,0.12)',
+    bottom: -40, right: 40,
+  },
   heroContent: { alignItems: 'center' },
+  heroSeal: {
+    width: 52, height: 52, borderRadius: 14,
+    backgroundColor: 'rgba(245,236,215,0.15)',
+    borderWidth: 1.5, borderColor: 'rgba(245,236,215,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  heroSealText: { fontSize: 26, fontWeight: '700', color: Colors.goldLight },
   heroTitle: { fontSize: 32, fontWeight: '800', color: '#FFFFFF', letterSpacing: 4 },
   heroSubtitle: { fontSize: 14, color: Colors.goldLight, marginTop: Spacing.sm, letterSpacing: 2 },
   heroBadge: {
     marginTop: Spacing.lg,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1, borderColor: 'rgba(245,236,215,0.3)',
     paddingHorizontal: 16, paddingVertical: 6, borderRadius: BorderRadius.full,
   },
   heroBadgeText: { fontSize: 12, color: Colors.goldLight, fontWeight: '500' },
@@ -197,7 +245,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.vermilionLight,
     borderLeftWidth: 4, borderLeftColor: Colors.vermilion,
   },
-  emergencyTitle: { fontSize: 14, fontWeight: '700', color: Colors.vermilion, marginBottom: 4 },
+  emergencyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
+  emergencyTitle: { fontSize: 14, fontWeight: '700', color: Colors.vermilion },
   emergencyText: { fontSize: 13, color: Colors.vermilion, lineHeight: 20 },
 
   // AI Card
@@ -220,7 +269,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 2, borderColor: Colors.goldLight,
   },
-  aiAvatar: { fontSize: 32 },
   aiCardContent: { flex: 1, marginLeft: Spacing.lg },
   aiCardTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginBottom: 4 },
   aiCardSubtitle: { fontSize: 13, color: Colors.textSecondary },
@@ -229,7 +277,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center',
   },
-  aiArrowText: { fontSize: 18, color: Colors.gold, fontWeight: '600' },
 
   // Section
   section: { marginTop: Spacing.xxl, paddingHorizontal: Spacing.lg },
@@ -238,6 +285,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: Spacing.md,
   },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionLabel: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   sectionMore: { fontSize: 13, color: Colors.gold, fontWeight: '500' },
 
@@ -250,11 +298,9 @@ const styles = StyleSheet.create({
     ...Shadows.sm,
   },
   quickIconWrap: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: Colors.goldSurface,
+    width: 52, height: 52, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm,
   },
-  quickIcon: { fontSize: 24 },
   quickLabel: { fontSize: 14, fontWeight: '600', color: Colors.ink, marginBottom: 2 },
   quickDesc: { fontSize: 11, color: Colors.textMuted },
 
@@ -289,6 +335,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md,
   },
   spotRankNum: { fontSize: 16, fontWeight: '700', color: Colors.gold },
+  spotRankNumTop: { color: '#FFFFFF' },
   spotInfo: { flex: 1 },
   spotNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
   spotName: { fontSize: 16, fontWeight: '600', color: Colors.ink },
@@ -300,5 +347,6 @@ const styles = StyleSheet.create({
   spotCategory: { fontSize: 12, color: Colors.textSecondary, marginBottom: 4 },
   spotFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   spotPrice: { fontSize: 17, fontWeight: '700', color: Colors.vermilion },
+  spotStatsRow: { flexDirection: 'row', alignItems: 'center' },
   spotStats: { fontSize: 11, color: Colors.textMuted },
 });

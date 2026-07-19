@@ -132,9 +132,14 @@ class LLMService:
 如需接入API，请在 backend/.env 中配置 DASHSCOPE_API_KEY 或 OPENAI_API_KEY。"""
         for char in mock_response:
             yield char
-            import asyncio
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.005)
 
-    async def prewarm(self):
-        """预热LLM API连接"""
-        await self._get_client()
+
+_llm_service: "LLMService | None" = None
+
+
+def get_llm_service() -> LLMService:
+    global _llm_service
+    if _llm_service is None:
+        _llm_service = LLMService()
+    return _llm_service

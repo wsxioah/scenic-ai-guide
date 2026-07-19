@@ -1,11 +1,9 @@
 import asyncio
-import json
 import base64
 import subprocess
 import edge_tts
 import tempfile
 import os
-import sys
 
 # ── Ensure project-bundled ffmpeg is on PATH before whisper imports ──
 # Whisper's load_audio() internally calls subprocess.run(["ffmpeg", ...])
@@ -22,13 +20,16 @@ if _FFMPEG_DIR not in _path_entries:
     os.environ["PATH"] = _FFMPEG_DIR + os.pathsep + os.environ.get("PATH", "")
 
 import whisper
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.database import get_db
 from app.core.config import settings
 
 router = APIRouter()
+
+
+async def preload_asr_model():
+    """在应用启动时预加载Whisper模型，避免首次请求等待3-15秒"""
+    await _get_asr_model()
 
 _model_lock = asyncio.Lock()
 _asr_model = None
@@ -128,72 +129,6 @@ async def speech_to_text(req: STTRequest):
         return {"text": "", "error": str(e)}
     finally:
         if wav_path:
-            try:
-                os.unlink(wav_path)
-            except Exception:
-                pass
-
-
-@router.websocket("/ws/{user_id}")
-async def voice_websocket(websocket: WebSocket, user_id: int):
-    await websocket.accept()
-    try:
-        while True:
-            data = await websocket.receive_json()
-            action = data.get("action")
-
-            if action == "stt":
-                audio_b64 = data.get("audio", "")
-                transcript = await _stt_transcribe(audio_b64)
-                await websocket.send_json({
-                    "type": "stt_result",
-                    "text": transcript,
-                })
-
-            elif action == "tts":
-                text = data.get("text", "")
-                audio_b64 = await _text_to_speech_base64(text)
-                await websocket.send_json({
-                    "type": "tts_result",
-                    "audio": audio_b64,
-                })
-
-    except WebSocketDisconnect:
-        pass
-
-
-async def _stt_transcribe(audio_b64: str) -> str:
-    try:
-        audio_bytes = base64.b64decode(audio_b64)
-    except Exception:
-        return ""
-    wav_path = None
-    try:
-        loop = asyncio.get_event_loop()
-        wav_path = await loop.run_in_executor(None, _decode_to_wav, audio_bytes, "audio/mp4")
-        if not wav_path or not os.path.isfile(wav_path):
-            return ""
-        model = await _get_asr_model()
-        result = await loop.run_in_executor(
-            None,
-            lambda: model.transcribe(
-                wav_path,
-                language="zh",
-                task="transcribe",
-                initial_prompt="以下是中文普通话。",
-                no_speech_threshold=0.6,
-                logprob_threshold=-1.0,
-                compression_ratio_threshold=2.4,
-                condition_on_previous_text=False,
-            ),
-        )
-        text = result.get("text", "").strip()
-        return text if len(text) >= 2 else ""
-    except Exception as e:
-        print(f"STT error: {e}")
-        return ""
-    finally:
-        if wav_path and os.path.isfile(wav_path):
             try:
                 os.unlink(wav_path)
             except Exception:

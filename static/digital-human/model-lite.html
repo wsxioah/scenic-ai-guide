@@ -191,7 +191,7 @@
 
         if (lipSync && model) {
             lipSync.start(audioElement, function(mouthOpen) {
-                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 3.0)));
+                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 1.8)));
             }, { muted: false });
         }
 
@@ -216,6 +216,14 @@
     var _lipSyncQueue = [];
     var _lipSyncActive = false;
     var _lipSyncSourceId = 0;  // incrementing ID to guard against stale ended events
+    var _sharedAudioCtx = null;  // shared AudioContext, reused across chunks
+
+    function _getSharedAudioCtx() {
+        if (!_sharedAudioCtx || _sharedAudioCtx.state === "closed") {
+            _sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return _sharedAudioCtx;
+    }
 
     function _runLipSyncQueue() {
         if (_lipSyncQueue.length === 0) {
@@ -230,14 +238,18 @@
 
         dhDebug("lipsync:" + mySourceId + " fetching...");
 
-        var ctx = lipSync.audioContext || new (window.AudioContext || window.webkitAudioContext)();
+        var ctx = _getSharedAudioCtx();
         lipSync.audioContext = ctx;
 
-        // Always resume AudioContext — Android may auto-suspend between chunks
+        // Resume AudioContext — essential for Android WebView
         var ready = (ctx.state === "suspended")
             ? ctx.resume().catch(function(e) { dhDebug("ctx_resume_err:"+e.message); })
             : Promise.resolve();
         ready.then(function() {
+            // Double-check state after resume attempt
+            if (ctx.state !== "running") {
+                dhDebug("lipsync:" + mySourceId + " ctx still " + ctx.state);
+            }
             return fetch(url);
         })
         .then(function(r) {
@@ -267,17 +279,21 @@
             var source = ctx.createBufferSource();
             source.buffer = audioBuffer;
             var analyser = ctx.createAnalyser();
-            analyser.fftSize = 256;
-            analyser.smoothingTimeConstant = 0.4;
+            analyser.fftSize = 128;
+            analyser.smoothingTimeConstant = 0.1;
             source.connect(analyser);
 
             lipSync.source = source;
             lipSync.analyser = analyser;
             lipSync.isRunning = true;
             lipSync.onMouthUpdate = function(mouthOpen) {
-                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 3.0)));
+                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 1.8)));
             };
             lipSync._loop();
+
+            // Notify RN that lip-sync analysis has started
+            // RN should sync audio playback to this event
+            notifyRN({ lipSyncStarted: true, id: mySourceId });
 
             source.addEventListener("ended", function() {
                 dhDebug("lipsync:" + mySourceId + " done");

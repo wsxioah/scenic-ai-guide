@@ -1,17 +1,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, FlatList,
+  View, Text, TextInput, TouchableOpacity, FlatList, ScrollView,
   StyleSheet, KeyboardAvoidingView, Platform, Alert, StatusBar,
 } from 'react-native';
 import { useAudioPlayer } from 'expo-audio';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useChatStore } from '../stores/chatStore';
 import { useUserStore } from '../stores/userStore';
 import VoiceRecordButton from '../components/VoiceRecordButton';
 import RecognizeModal from '../components/RecognizeModal';
 import AvatarWebView, { avatarSendAction } from '../components/AvatarWebView';
 import api from '../services/api';
-import { Colors, Spacing, BorderRadius, Shadows, Typography } from '../theme';
+import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
 import { SERVER_URL, WS_URL, SHOW_PHOTO_RECOGNITION } from '../config';
 
 type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
@@ -25,8 +26,10 @@ export default function ChatScreen() {
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [recognizeVisible, setRecognizeVisible] = useState(false);
   const [avatarGender, setAvatarGender] = useState<'female' | 'male'>('female');
+  const [recommendChips, setRecommendChips] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttemptsRef = useRef(0);
 
   const {
     messages, isStreaming, streamingContent,
@@ -37,17 +40,24 @@ export default function ChatScreen() {
   const audioPlayer = useAudioPlayer();
   const audioQueueRef = useRef<string[]>([]);
   const audioPlayingRef = useRef(false);
+  const readyToPlayCountRef = useRef(0);
 
   const playNextInQueue = useCallback(() => {
-    if (audioQueueRef.current.length === 0) {
+    if (audioQueueRef.current.length === 0 || readyToPlayCountRef.current === 0) {
       audioPlayingRef.current = false;
       return;
     }
+    readyToPlayCountRef.current--;
     const url = audioQueueRef.current.shift()!;
     audioPlayingRef.current = true;
     const fullUrl = url.startsWith('http') ? url : API_BASE + url;
-    audioPlayer.replace({ uri: fullUrl });
-    audioPlayer.play();
+    try {
+      audioPlayer.replace({ uri: fullUrl });
+      audioPlayer.play();
+    } catch (e) {
+      console.warn('[Audio] playback error:', e);
+      playNextInQueue();
+    }
   }, [audioPlayer]);
 
   useEffect(() => {
@@ -82,21 +92,14 @@ export default function ChatScreen() {
         const data = JSON.parse(event.data);
         switch (data.type) {
           case 'llm_token': appendStreamContent(data.token); break;
-          case 'llm_done': flushStreamContent(); setStreaming(false); break;
-          case 'tts_ready':
-            if (data.audio_url) {
-              const fullUrl = data.audio_url.startsWith('http') ? data.audio_url : API_BASE + data.audio_url;
-              audioPlayer.replace({ uri: fullUrl });
-              audioPlayer.play();
-              audioPlayingRef.current = true;
-              avatarSendAction('lipSync', { audioUrl: data.audio_url });
-            }
+          case 'llm_done':
+            flushStreamContent(); setStreaming(false);
+            api.getRecommendForUser(3).then(setRecommendChips).catch(() => {});
             break;
           case 'tts_chunk':
             if (data.audio_url) {
               audioQueueRef.current.push(data.audio_url);
               avatarSendAction('lipSync', { audioUrl: data.audio_url });
-              if (!audioPlayingRef.current) playNextInQueue();
             }
             break;
           case 'ready': setStreaming(false); break;
@@ -109,11 +112,18 @@ export default function ChatScreen() {
       }
     };
 
+    ws.onopen = () => {
+      reconnectAttemptsRef.current = 0;
+    };
     ws.onclose = () => {
       wsRef.current = null;
-      setTimeout(connectWSRef.current, 2000);
+      const delay = Math.min(2000 * Math.pow(1.5, reconnectAttemptsRef.current), 30000);
+      reconnectAttemptsRef.current++;
+      setTimeout(connectWSRef.current, delay);
     };
-    ws.onerror = () => {};
+    ws.onerror = (event) => {
+      console.warn('[WS] connection error:', (event as any)?.message || 'unknown');
+    };
   }, [appendStreamContent, flushStreamContent, setStreaming, audioPlayer]);
   connectWSRef.current = connectWS;
 
@@ -128,6 +138,7 @@ export default function ChatScreen() {
     setInputText('');
     addMessage({ id: Date.now(), role: 'user', content: text });
     setStreaming(true);
+    setRecommendChips([]);
 
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
@@ -151,8 +162,14 @@ export default function ChatScreen() {
     audioPlayer.replace({ uri: '' });
     audioQueueRef.current = [];
     audioPlayingRef.current = false;
+    readyToPlayCountRef.current = 0;
     avatarSendAction('idle');
   }, [flushStreamContent, setStreaming, audioPlayer]);
+
+  const handleLipSyncStarted = useCallback(() => {
+    readyToPlayCountRef.current++;
+    if (!audioPlayingRef.current) playNextInQueue();
+  }, [playNextInQueue]);
 
   const handleSpotRecognized = useCallback((spot: { name: string; lat: number; lng: number; desc?: string; category?: string }) => {
     const content = `[拍照识景] 识别到: ${spot.name}${spot.category ? ` (${spot.category}类景点)` : ''}。请介绍一下这个景点。`;
@@ -186,7 +203,7 @@ export default function ChatScreen() {
     <>
       {/* Avatar */}
       <View style={styles.avatarContainer}>
-        <AvatarWebView style={styles.avatarWebView} modelId={avatarGender} />
+        <AvatarWebView style={styles.avatarWebView} modelId={avatarGender} onLipSyncStarted={handleLipSyncStarted} />
       </View>
 
       <FlatList
@@ -200,7 +217,7 @@ export default function ChatScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconRing}>
-              <Text style={styles.emptyIcon}>🏔</Text>
+              <Ionicons name="sparkles" size={36} color={Colors.goldDark} />
             </View>
             <Text style={styles.emptyTitle}>灵山 AI 导览</Text>
             <Text style={styles.emptySubtitle}>我是您的智慧导游，可以语音或文字向我提问</Text>
@@ -250,6 +267,24 @@ export default function ChatScreen() {
         </View>
       )}
 
+      {/* Recommendation chips */}
+      {recommendChips.length > 0 && (
+        <View style={styles.recommendRow}>
+          <Text style={styles.recommendLabel}>为你推荐</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recommendScroll}>
+            {recommendChips.map((chip: any) => (
+              <TouchableOpacity
+                key={chip.id}
+                style={styles.recommendChip}
+                onPress={() => navigation.navigate('ScenicDetail', { spotId: chip.id })}
+              >
+                <Text style={styles.recommendChipText}>{chip.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Input area */}
       <View style={styles.inputArea}>
         <View style={styles.inputRow}>
@@ -265,7 +300,7 @@ export default function ChatScreen() {
           />
           {isStreaming ? (
             <TouchableOpacity style={styles.stopBtn} onPress={handleStop}>
-              <Text style={styles.stopBtnText}>⏹</Text>
+              <Ionicons name="stop" size={18} color="#FFFFFF" />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
@@ -273,7 +308,7 @@ export default function ChatScreen() {
               onPress={handleSend}
               disabled={!inputText.trim()}
             >
-              <Text style={styles.sendBtnText}>↑</Text>
+              <Ionicons name="arrow-up" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           )}
         </View>
@@ -294,7 +329,7 @@ export default function ChatScreen() {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <View style={styles.headerAvatar}>
-            <Text style={styles.headerAvatarText}>🏔</Text>
+            <Ionicons name="sparkles" size={19} color={Colors.goldDark} />
           </View>
           <View>
             <Text style={styles.headerTitle}>AI 景区导览</Text>
@@ -318,7 +353,7 @@ export default function ChatScreen() {
           </View>
           {SHOW_PHOTO_RECOGNITION && (
             <TouchableOpacity onPress={() => setRecognizeVisible(true)} style={styles.headerBtn}>
-              <Text style={styles.headerBtnIcon}>📷</Text>
+              <Ionicons name="camera" size={17} color={Colors.goldDark} />
             </TouchableOpacity>
           )}
           <TouchableOpacity onPress={clearMessages} style={styles.newChatBtn}>
@@ -363,7 +398,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerAvatarText: { fontSize: 20 },
   headerTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink },
   headerStatus: { fontSize: 11, color: Colors.jade, fontWeight: '500' },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -372,7 +406,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerBtnIcon: { fontSize: 16 },
   newChatBtn: {
     paddingHorizontal: 14, paddingVertical: 7,
     borderRadius: BorderRadius.full, backgroundColor: Colors.goldSurface,
@@ -429,7 +462,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: 16,
     borderWidth: 2, borderColor: Colors.goldLight,
   },
-  emptyIcon: { fontSize: 40 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: Colors.ink, marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: Colors.textSecondary, marginBottom: 24 },
   quickPrompts: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 },
@@ -465,6 +497,24 @@ const styles = StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.gold },
   dot1: { opacity: 0.4 }, dot2: { opacity: 0.7 }, dot3: { opacity: 1 },
 
+  // Recommend chips
+  recommendRow: {
+    paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm,
+    backgroundColor: Colors.white,
+  },
+  recommendLabel: {
+    fontSize: 11, color: Colors.textMuted, fontWeight: '600',
+    marginBottom: 6,
+  },
+  recommendScroll: { gap: 8 },
+  recommendChip: {
+    backgroundColor: Colors.goldSurface,
+    paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1, borderColor: Colors.goldLight,
+  },
+  recommendChipText: { color: Colors.goldDark, fontSize: 13, fontWeight: '500' },
+
   // Input
   inputArea: {
     padding: Spacing.md, backgroundColor: Colors.white,
@@ -488,6 +538,4 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',
   },
-  sendBtnText: { color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
-  stopBtnText: { color: '#FFFFFF', fontSize: 16 },
 });

@@ -1,29 +1,81 @@
-import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.models.database import engine, Base, get_db
-from app.models.entities import DigitalHumanConfig
-from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi
-from fastapi.responses import HTMLResponse
-from sqlalchemy import select
+from app.models.entities import DigitalHumanConfig, FAQ
+from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi, recommend
+from fastapi.responses import HTMLResponse, JSONResponse
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ── 数据库初始化 ──
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     from app.services.poi_seed import seed_pois
+    from app.services.faq_seed import seed_faqs
     await seed_pois()
+    await seed_faqs()
+
+    # ── 预加载重量级模型，避免首次请求等待 8-30 秒 ──
+    logger.info("Preloading models (this may take 10-30s on first run)...")
+
+    # 1. Whisper ASR (769MB, 首次3-15s)
+    try:
+        from app.api.voice import preload_asr_model
+        await preload_asr_model()
+        logger.info("Whisper ASR model ready")
+    except Exception as e:
+        logger.warning(f"Whisper preload failed (will retry on first request): {e}")
+
+    # 2. ChromaDB + SentenceTransformer embedding (471MB, 首次4-13s)
+    try:
+        from app.services.rag_service import get_rag_service
+        get_rag_service().warmup()
+        logger.info("RAG service ready (ChromaDB + embedding)")
+    except Exception as e:
+        logger.warning(f"RAG preload failed (will retry on first request): {e}")
+
+    # 3. LLM HTTP client 预热 (DNS+TCP+TLS, 0.5-2s)
+    try:
+        from app.services.llm_service import get_llm_service
+        await get_llm_service()._get_client()
+        logger.info("LLM HTTP client ready")
+    except Exception as e:
+        logger.warning(f"LLM client preload failed: {e}")
+
+    logger.info("All models preloaded — ready to serve")
     yield
     await engine.dispose()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+@app.get("/health")
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "database": str(e)})
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +93,7 @@ app.include_router(knowledge.router, prefix="/api/knowledge", tags=["知识库"]
 app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
 app.include_router(digital_human.router, tags=["数字人"])
 app.include_router(poi.router, prefix="/api/poi", tags=["POI"])
+app.include_router(recommend.router, prefix="/api/recommend", tags=["推荐"])
 
 
 # Static files
@@ -52,6 +105,23 @@ os.makedirs(DIGITAL_HUMAN_DIR, exist_ok=True)
 
 app.mount("/digital-human", StaticFiles(directory=DIGITAL_HUMAN_DIR), name="digital-human")
 app.mount("/static/audio", StaticFiles(directory=AUDIO_STATIC_DIR), name="audio_static")
+
+
+@app.get("/api/faq")
+async def public_faq(
+    category: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """公开FAQ接口 — 无需认证，返回已发布FAQ"""
+    query = select(FAQ).where(FAQ.is_published == True).order_by(FAQ.sort_order.asc(), FAQ.id.asc())
+    if category:
+        query = query.where(FAQ.category == category)
+    result = await db.execute(query)
+    faqs = result.scalars().all()
+    return [{
+        "id": f.id, "question": f.question, "answer": f.answer,
+        "category": f.category,
+    } for f in faqs]
 
 
 @app.get("/")

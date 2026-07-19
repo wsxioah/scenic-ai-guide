@@ -4,9 +4,14 @@ import {
   StatusBar,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useUserStore } from '../stores/userStore';
-import { Colors, Spacing, BorderRadius, Shadows, Typography } from '../theme';
+import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
+
+const CATEGORY_ICONS: Record<string, string> = {
+  '自然': 'pine-tree', '人文': 'bank', '历史': 'castle', '宗教': 'hands-pray',
+};
 
 export default function ScenicDetailScreen() {
   const route = useRoute<any>();
@@ -16,6 +21,7 @@ export default function ScenicDetailScreen() {
 
   const [spot, setSpot] = useState<any>(null);
   const [comments, setComments] = useState<any[]>([]);
+  const [isFavorited, setIsFavorited] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -32,6 +38,24 @@ export default function ScenicDetailScreen() {
     } catch {}
   };
 
+  useEffect(() => {
+    if (spot && isLoggedIn) {
+      api.trackView(spot.id, spot.name).catch(() => {});
+      api.getFavorites().then((favs: any[]) => {
+        const faved = favs.some((f: any) => f.spot_id === spot.id);
+        setIsFavorited(faved);
+      }).catch(() => {});
+    }
+  }, [spot, isLoggedIn]);
+
+  const toggleFavorite = async () => {
+    if (!isLoggedIn) return;
+    try {
+      const res: any = await api.toggleFavorite(spot.id);
+      setIsFavorited(res.favorited);
+    } catch {}
+  };
+
   const askAI = () => {
     navigation.navigate('Chat');
   };
@@ -41,7 +65,7 @@ export default function ScenicDetailScreen() {
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.paper} />
         <View style={styles.loadingRing}>
-          <Text style={styles.loadingIcon}>🏔</Text>
+          <MaterialCommunityIcons name="image-filter-hdr" size={36} color={Colors.goldDark} />
         </View>
         <Text style={styles.loadingText}>加载中...</Text>
       </View>
@@ -57,7 +81,18 @@ export default function ScenicDetailScreen() {
           <View style={styles.heroPattern}>
             <Text style={styles.heroDecoration}>卍</Text>
           </View>
-          <Text style={styles.heroIcon}>🏛</Text>
+          <View style={styles.heroCircle1} />
+          <View style={styles.heroCircle2} />
+          <View style={styles.heroIconRing}>
+            <View style={styles.heroIconInner}>
+              <MaterialCommunityIcons
+                name={(CATEGORY_ICONS[spot.category] || 'bank') as any}
+                size={38}
+                color={Colors.goldLight}
+              />
+            </View>
+          </View>
+          <Text style={styles.heroName}>{spot.name}</Text>
         </View>
 
         {/* Info card */}
@@ -86,7 +121,7 @@ export default function ScenicDetailScreen() {
           <View style={styles.divider} />
 
           <View style={styles.addressRow}>
-            <Text style={styles.addressIcon}>📍</Text>
+            <Ionicons name="location" size={14} color={Colors.vermilion} style={{ marginRight: 6 }} />
             <Text style={styles.address}>{spot.address || '灵山胜境景区内'}</Text>
           </View>
 
@@ -95,12 +130,18 @@ export default function ScenicDetailScreen() {
 
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>👁 {spot.pv || 0}</Text>
+              <View style={styles.statValueRow}>
+                <Ionicons name="eye" size={14} color={Colors.text} />
+                <Text style={styles.statValue}> {spot.pv || 0}</Text>
+              </View>
               <Text style={styles.statLabel}>浏览</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>⭐ {spot.score ?? '--'}</Text>
+              <View style={styles.statValueRow}>
+                <Ionicons name="star" size={14} color={Colors.warning} />
+                <Text style={styles.statValue}> {spot.score ?? '--'}</Text>
+              </View>
               <Text style={styles.statLabel}>评分</Text>
             </View>
           </View>
@@ -110,7 +151,7 @@ export default function ScenicDetailScreen() {
         <View style={styles.actions}>
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={askAI}>
             <View style={[styles.actionIconWrap, styles.actionIconWrapPrimary]}>
-              <Text style={styles.actionIcon}>🤖</Text>
+              <MaterialCommunityIcons name="robot-excited" size={22} color="#FFFFFF" />
             </View>
             <Text style={[styles.actionLabel, styles.actionLabelPrimary]}>AI 讲解</Text>
           </TouchableOpacity>
@@ -119,9 +160,19 @@ export default function ScenicDetailScreen() {
             onPress={() => navigation.navigate('Community', { spotId })}
           >
             <View style={styles.actionIconWrap}>
-              <Text style={styles.actionIcon}>💬</Text>
+              <Ionicons name="chatbubbles" size={22} color={Colors.goldDark} />
             </View>
             <Text style={styles.actionLabel}>游客评论</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.actionBtn} onPress={toggleFavorite}>
+            <View style={styles.actionIconWrap}>
+              <Ionicons
+                name={isFavorited ? 'heart' : 'heart-outline'}
+                size={22}
+                color={isFavorited ? Colors.vermilion : Colors.goldDark}
+              />
+            </View>
+            <Text style={styles.actionLabel}>{isFavorited ? '已收藏' : '收藏'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -133,7 +184,7 @@ export default function ScenicDetailScreen() {
           </View>
           {comments.length === 0 ? (
             <View style={styles.noComments}>
-              <Text style={styles.noCommentsIcon}>💬</Text>
+              <Ionicons name="chatbubbles-outline" size={32} color={Colors.textMuted} />
               <Text style={styles.noCommentsText}>暂无评论，快来第一个评论吧</Text>
             </View>
           ) : (
@@ -142,15 +193,22 @@ export default function ScenicDetailScreen() {
                 <View style={styles.commentHeader}>
                   <View style={styles.commentUserRow}>
                     <View style={styles.commentAvatar}>
-                      <Text style={styles.commentAvatarText}>👤</Text>
+                      <Ionicons name="person" size={14} color={Colors.goldDark} />
                     </View>
                     <Text style={styles.commentUser}>游客</Text>
                   </View>
-                  <Text style={styles.commentRate}>{'⭐'.repeat(c.rating || 5)}</Text>
+                  <View style={{ flexDirection: 'row', gap: 1 }}>
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Ionicons key={s} name="star" size={11} color={s <= (c.rating || 5) ? Colors.warning : Colors.divider} />
+                    ))}
+                  </View>
                 </View>
                 <Text style={styles.commentContent}>{c.content}</Text>
                 <View style={styles.commentFooter}>
-                  <Text style={styles.commentLikes}>👍 {c.likes || 0}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <Ionicons name="thumbs-up-outline" size={12} color={Colors.textSecondary} />
+                    <Text style={styles.commentLikes}>{c.likes || 0}</Text>
+                  </View>
                   <Text style={styles.commentDate}>{c.created_at?.slice(0, 10)}</Text>
                 </View>
               </View>
@@ -179,18 +237,40 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg,
     borderWidth: 2, borderColor: Colors.goldLight,
   },
-  loadingIcon: { fontSize: 36 },
   loadingText: { fontSize: 15, color: Colors.textMuted },
 
   // Hero placeholder
   heroPlaceholder: {
-    height: 200, backgroundColor: Colors.goldDark,
+    height: 220, backgroundColor: Colors.goldDark,
     alignItems: 'center', justifyContent: 'center',
     overflow: 'hidden',
   },
   heroPattern: { position: 'absolute', top: -20, right: -20, opacity: 0.1 },
   heroDecoration: { fontSize: 140, color: Colors.goldLight },
-  heroIcon: { fontSize: 56 },
+  heroCircle1: {
+    position: 'absolute', width: 220, height: 220, borderRadius: 110,
+    borderWidth: 1, borderColor: 'rgba(245,236,215,0.18)',
+    top: -70, left: -70,
+  },
+  heroCircle2: {
+    position: 'absolute', width: 150, height: 150, borderRadius: 75,
+    borderWidth: 1, borderColor: 'rgba(245,236,215,0.12)',
+    bottom: -50, right: 30,
+  },
+  heroIconRing: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: 'rgba(245,236,215,0.15)',
+    borderWidth: 1.5, borderColor: 'rgba(245,236,215,0.4)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroIconInner: {
+    width: 76, height: 76, borderRadius: 38,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  heroName: {marginTop: Spacing.md, fontSize: 15, fontWeight: '600',
+    color: Colors.goldLight, letterSpacing: 3,
+  },
 
   // Info card
   infoCard: {
@@ -223,7 +303,6 @@ const styles = StyleSheet.create({
   price: { fontSize: 28, fontWeight: '800', color: Colors.vermilion },
   divider: { height: 1, backgroundColor: Colors.divider, marginBottom: Spacing.md },
   addressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.lg },
-  addressIcon: { fontSize: 14, marginRight: 6 },
   address: { fontSize: 13, color: Colors.textSecondary, flex: 1 },
   sectionLabel: {
     fontSize: 13, fontWeight: '700', color: Colors.goldDark,
@@ -233,6 +312,7 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', alignItems: 'center' },
   statItem: { flex: 1, alignItems: 'center' },
   statDivider: { width: 1, height: 24, backgroundColor: Colors.divider },
+  statValueRow: { flexDirection: 'row', alignItems: 'center' },
   statValue: { fontSize: 14, color: Colors.text, fontWeight: '600' },
   statLabel: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
 
@@ -253,7 +333,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.sm,
   },
   actionIconWrapPrimary: { backgroundColor: 'rgba(255,255,255,0.2)' },
-  actionIcon: { fontSize: 22 },
   actionLabel: { fontSize: 12, fontWeight: '600', color: Colors.text },
   actionLabelPrimary: { color: '#FFFFFF' },
 
@@ -268,11 +347,10 @@ const styles = StyleSheet.create({
   commentSectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   commentCount: { fontSize: 13, color: Colors.textMuted },
   noComments: {
-    alignItems: 'center', paddingVertical: Spacing.xxxl,
+    alignItems: 'center', paddingVertical: Spacing.xxxl, gap: 8,
     backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
     ...Shadows.sm,
   },
-  noCommentsIcon: { fontSize: 32, marginBottom: Spacing.sm },
   noCommentsText: { fontSize: 14, color: Colors.textMuted },
   commentItem: {
     backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
@@ -288,9 +366,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center',
   },
-  commentAvatarText: { fontSize: 14 },
   commentUser: { fontSize: 14, fontWeight: '600', color: Colors.ink },
-  commentRate: { fontSize: 11 },
   commentContent: { fontSize: 14, color: Colors.text, lineHeight: 22 },
   commentFooter: {
     flexDirection: 'row', justifyContent: 'space-between',

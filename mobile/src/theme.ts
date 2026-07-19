@@ -25,7 +25,6 @@ export const Colors = {
   // Background
   paper: '#FEF9F3',
   white: '#FFFFFF',
-  card: '#FFFFFF',
 
   // Surface
   surface: '#F8F4EC',
@@ -38,13 +37,10 @@ export const Colors = {
   textMuted: '#BFB5A8',
 
   // Status
-  success: '#5D8C5A',
   warning: '#D4A43A',
-  error: '#B5453A',
 };
 
 export const Spacing = {
-  xs: 4,
   sm: 8,
   md: 12,
   lg: 16,
@@ -85,13 +81,3 @@ export const Shadows = {
   },
 };
 
-export const Typography = {
-  h1: { fontSize: 28, fontWeight: '800' as const, color: Colors.ink, letterSpacing: 0.5 },
-  h2: { fontSize: 22, fontWeight: '700' as const, color: Colors.ink },
-  h3: { fontSize: 18, fontWeight: '700' as const, color: Colors.ink },
-  h4: { fontSize: 16, fontWeight: '600' as const, color: Colors.text },
-  body: { fontSize: 15, color: Colors.text, lineHeight: 24 },
-  bodySmall: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
-  caption: { fontSize: 12, color: Colors.textMuted, lineHeight: 18 },
-  price: { fontSize: 20, fontWeight: '700' as const, color: Colors.vermilion },
-};

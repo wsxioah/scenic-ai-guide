@@ -16,6 +16,16 @@ espeak-ng-data/
 
 # Generated audio
 static/audio/*.wav
+static/audio/*.mp3
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Temp / cache
+tmp/
+backend/.vite/
 
 # ChromaDB data
 chroma_data/

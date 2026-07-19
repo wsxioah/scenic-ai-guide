@@ -5,7 +5,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     app_name: str = "景区AI数字人导览"
-    debug: bool = True
+    debug: bool = False
     secret_key: str = os.environ.get(
         "JWT_SECRET_KEY",
         "scenic-ai-secret-key-change-in-production"

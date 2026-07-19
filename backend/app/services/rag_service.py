@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 import hashlib
 import logging
+import os
+
+# Use HF mirror in China (no-op if HF_ENDPOINT already set)
+if "HF_ENDPOINT" not in os.environ:
+    os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from app.core.config import settings
@@ -22,6 +28,9 @@ class SentenceTransformerEmbedding:
             from sentence_transformers import SentenceTransformer
             self._model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
         return self._model
+
+    def name(self) -> str:
+        return "paraphrase-multilingual-MiniLM-L12-v2"
 
     def __call__(self, input: list[str]) -> list[list[float]]:
         embeddings = self.model.encode(input, normalize_embeddings=True)
@@ -62,6 +71,15 @@ class RAGService:
             )
         return self._collection
 
+    def warmup(self):
+        """在应用启动时预加载ChromaDB + SentenceTransformer模型"""
+        _ = self.collection  # 初始化ChromaDB client + collection
+        # 触发embedding模型加载（通过一次空查询）
+        try:
+            self.collection.query(query_texts=["warmup"], n_results=1)
+        except Exception:
+            pass  # 集合可能为空
+
     async def search(self, query: str, top_k: int = 3) -> list[dict]:
         try:
             results = self.collection.query(query_texts=[query], n_results=top_k)
@@ -96,19 +114,13 @@ class RAGService:
         except Exception as e:
             logger.warning(f"RAG delete error: {e}")
 
-    async def add_batch(self, items: list[dict]) -> int:
-        count = 0
-        for item in items:
-            await self.add_knowledge(
-                title=item.get("title", ""),
-                content=item.get("content", ""),
-                tags=item.get("tags"),
-                scenic_id=item.get("scenic_id"),
-            )
-            count += 1
-        return count
 
-    async def recommend_scenic(self, user_interests: list[str], top_k: int = 5) -> list[dict]:
-        if not user_interests:
-            return []
-        return await self.search(" ".join(user_interests), top_k=top_k)
+# 单例——所有模块共享同一个已预热的实例
+_rag_service: RAGService | None = None
+
+
+def get_rag_service() -> RAGService:
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = RAGService()
+    return _rag_service

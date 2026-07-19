@@ -6,7 +6,8 @@ import {
 import { useUserStore } from '../stores/userStore';
 import { useChatStore } from '../stores/chatStore';
 import api from '../services/api';
-import { Colors, Spacing, BorderRadius, Shadows, Typography } from '../theme';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
 
 export default function ProfileScreen() {
   const { userId, isLoggedIn, phone, nickname, avatar, login, logout } = useUserStore();
@@ -21,7 +22,7 @@ export default function ProfileScreen() {
     }
     try {
       const user = await api.login(loginPhone, '0000');
-      login(user.id, user.phone, user.nickname, '');
+      login(user.id, user.token, user.phone, user.nickname, '');
       api.setUserId(user.id);
       setShowLogin(false);
     } catch {
@@ -47,12 +48,12 @@ export default function ProfileScreen() {
   };
 
   const menuItems = [
-    { icon: '📋', label: '我的订单', onPress: notImplemented('我的订单') },
-    { icon: '⭐', label: '我的收藏', onPress: notImplemented('我的收藏') },
-    { icon: '🕐', label: '浏览历史', onPress: notImplemented('浏览历史') },
-    { icon: '💬', label: '我的评论', onPress: notImplemented('我的评论') },
-    { icon: '📊', label: '游览报告', onPress: notImplemented('游览报告') },
-    { icon: '⚙️', label: '设置', onPress: notImplemented('设置') },
+    { icon: 'receipt', label: '我的订单', onPress: notImplemented('我的订单') },
+    { icon: 'heart', label: '我的收藏', onPress: notImplemented('我的收藏') },
+    { icon: 'time', label: '浏览历史', onPress: notImplemented('浏览历史') },
+    { icon: 'chatbubble-ellipses', label: '我的评论', onPress: notImplemented('我的评论') },
+    { icon: 'stats-chart', label: '游览报告', onPress: notImplemented('游览报告') },
+    { icon: 'settings', label: '设置', onPress: notImplemented('设置') },
   ];
 
   if (showLogin) {
@@ -61,7 +62,7 @@ export default function ProfileScreen() {
         <StatusBar barStyle="dark-content" backgroundColor={Colors.paper} />
         <View style={styles.loginCard}>
           <View style={styles.loginIconRing}>
-            <Text style={styles.loginIcon}>🏔</Text>
+            <Ionicons name="person" size={32} color={Colors.goldDark} />
           </View>
           <Text style={styles.loginTitle}>手机号登录</Text>
           <Text style={styles.loginSubtitle}>登录后享受个性化导览服务</Text>
@@ -96,7 +97,7 @@ export default function ProfileScreen() {
               {avatar?.startsWith('http') ? (
                 <Image source={{ uri: avatar }} style={styles.avatarImage} />
               ) : (
-                <Text style={styles.avatarText}>{avatar || '👤'}</Text>
+                <Ionicons name="person" size={36} color={Colors.goldDark} />
               )}
             </View>
           </View>
@@ -139,10 +140,10 @@ export default function ProfileScreen() {
           {menuItems.map((item) => (
             <TouchableOpacity key={item.label} style={styles.menuItem} onPress={item.onPress}>
               <View style={styles.menuIconWrap}>
-                <Text style={styles.menuIcon}>{item.icon}</Text>
+                <Ionicons name={item.icon as any} size={18} color={Colors.goldDark} />
               </View>
               <Text style={styles.menuLabel}>{item.label}</Text>
-              <Text style={styles.menuArrow}>›</Text>
+              <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
         </View>
@@ -180,7 +181,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg,
     borderWidth: 2, borderColor: Colors.goldLight,
   },
-  loginIcon: { fontSize: 32 },
   loginTitle: { fontSize: 22, fontWeight: '800', color: Colors.ink, marginBottom: 8 },
   loginSubtitle: { fontSize: 14, color: Colors.textSecondary, marginBottom: 28 },
   phoneInput: {
@@ -216,7 +216,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarImage: { width: 80, height: 80, borderRadius: 40 },
-  avatarText: { fontSize: 36 },
   nickname: { fontSize: 20, fontWeight: '700', color: Colors.ink },
   phone: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
   editBtn: {
@@ -263,9 +262,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md,
   },
-  menuIcon: { fontSize: 18 },
   menuLabel: { flex: 1, fontSize: 15, color: Colors.text, fontWeight: '500' },
-  menuArrow: { fontSize: 22, color: Colors.textMuted },
 
   // Logout
   logoutBtn: {

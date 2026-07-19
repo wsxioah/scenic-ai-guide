@@ -7,6 +7,7 @@ const API_BASE = SERVER_URL;
 class ApiClient {
   private baseUrl: string;
   private userId: number | null = null;
+  private token: string | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -16,25 +17,62 @@ class ApiClient {
     this.userId = id;
   }
 
+  setToken(token: string | null) {
+    this.token = token;
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
     };
-    const response = await fetch(url, { ...options, headers });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
     }
-    return response.json();
+
+    const doFetch = async (signal: AbortSignal) => {
+      const response = await fetch(url, { ...options, headers, signal });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.json();
+    };
+
+    try {
+      const result = await doFetch(controller.signal);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      // Retry once on network/abort errors
+      if (error.name === 'AbortError' || error.message?.includes('Network request failed')) {
+        const retryController = new AbortController();
+        const retryTimeoutId = setTimeout(() => retryController.abort(), 15000);
+        try {
+          const result = await doFetch(retryController.signal);
+          clearTimeout(retryTimeoutId);
+          return result;
+        } catch (retryError) {
+          clearTimeout(retryTimeoutId);
+          throw retryError;
+        }
+      }
+      throw error;
+    }
   }
 
   // Auth
   async login(phone: string, code: string = '0000') {
-    return this.request<{ id: number; phone: string; nickname: string }>('/api/auth/login', {
+    const result = await this.request<{ id: number; phone: string; nickname: string; token: string }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ phone, code }),
     });
+    this.token = result.token;
+    return result;
   }
 
   // Scenic spots
@@ -55,10 +93,6 @@ class ApiClient {
     let url = `/api/poi/nearby?lat=${lat}&lng=${lng}&radius_km=${radiusKm}`;
     if (category) url += `&category=${category}`;
     return this.request<{ pois: any[]; center: any }>(url);
-  }
-
-  async getRoutes() {
-    return this.request<any[]>(`/api/scenic/routes`);
   }
 
   // Comments
@@ -91,10 +125,6 @@ class ApiClient {
   }
 
   // Knowledge search
-  async searchKnowledge(query: string) {
-    return this.request<any>(`/api/knowledge/search?q=${encodeURIComponent(query)}`);
-  }
-
   // Scenic spot recognition from image
   async recognizeScenic(imageUri: string): Promise<{
     is_scenic: boolean;
@@ -123,6 +153,31 @@ class ApiClient {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     return response.json();
+  }
+
+  // ========== Recommendations & Tracking ==========
+
+  async getRecommendForUser(limit: number = 5) {
+    return this.request<any[]>(`/api/recommend/for-user?limit=${limit}`);
+  }
+
+  async trackView(spotId: number, spotName: string) {
+    return this.request(`/api/recommend/track/view?spot_id=${spotId}&spot_name=${encodeURIComponent(spotName)}`, { method: 'POST' });
+  }
+
+  async toggleFavorite(scenicSpotId: number) {
+    return this.request<{ favorited: boolean; message: string }>(`/api/recommend/track/favorite?scenic_spot_id=${scenicSpotId}`, { method: 'POST' });
+  }
+
+  async getFavorites() {
+    return this.request<any[]>(`/api/recommend/track/favorites`);
+  }
+
+  // FAQ
+  async getFAQs(category?: string) {
+    let url = '/api/faq';
+    if (category) url += `?category=${category}`;
+    return this.request<any[]>(url);
   }
 
   getBaseUrl() {

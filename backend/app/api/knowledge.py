@@ -92,15 +92,21 @@ async def import_batch(items: list[dict], db: AsyncSession = Depends(get_db)):
 @router.post("/import/excel")
 async def import_excel(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """从Excel文件导入知识（支持.xlsx格式）"""
-    import pandas as pd
-    content = await file.read()
-    df = pd.read_excel(content)
-    items = []
-    for _, row in df.iterrows():
-        items.append({
-            "title": str(row.get("title", row.get("标题", ""))),
-            "content": str(row.get("content", row.get("内容", ""))),
-            "tags": str(row.get("tags", row.get("标签", ""))).split(",") if row.get("tags") or row.get("标签") else [],
-        })
-    result = await import_batch(items, db)
-    return result
+    try:
+        import pandas as pd
+        content = await file.read()
+        df = pd.read_excel(content)
+        items = []
+        for _, row in df.iterrows():
+            items.append({
+                "title": str(row.get("title", row.get("标题", ""))),
+                "content": str(row.get("content", row.get("内容", ""))),
+                "tags": str(row.get("tags", row.get("标签", ""))).split(",") if row.get("tags") or row.get("标签") else [],
+            })
+        result = await import_batch(items, db)
+        return result
+    except Exception as e:
+        from fastapi import HTTPException
+        import logging
+        logging.getLogger(__name__).error(f"Excel import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=f"Excel导入失败: {str(e)}")

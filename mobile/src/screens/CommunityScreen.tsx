@@ -4,6 +4,7 @@ import {
   StyleSheet, Alert, KeyboardAvoidingView, Platform, StatusBar,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useUserStore } from '../stores/userStore';
 import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
@@ -44,16 +45,21 @@ export default function CommunityScreen() {
       <View style={styles.commentHeader}>
         <View style={styles.commentUserRow}>
           <View style={styles.commentAvatar}>
-            <Text style={styles.commentAvatarText}>👤</Text>
+            <Ionicons name="person" size={14} color={Colors.goldDark} />
           </View>
           <Text style={styles.commentUser}>游客</Text>
         </View>
-        <Text style={styles.commentStars}>{'⭐'.repeat(item.rating || 5)}</Text>
+        <View style={{ flexDirection: 'row', gap: 1 }}>
+          {[1, 2, 3, 4, 5].map(s => (
+            <Ionicons key={s} name="star" size={11} color={s <= (item.rating || 5) ? Colors.warning : Colors.divider} />
+          ))}
+        </View>
       </View>
       <Text style={styles.commentContent}>{item.content}</Text>
       <View style={styles.commentFooter}>
         <View style={styles.likesRow}>
-          <Text style={styles.likesText}>👍 {item.likes || 0}</Text>
+          <Ionicons name="thumbs-up-outline" size={12} color={Colors.textSecondary} />
+          <Text style={styles.likesText}> {item.likes || 0}</Text>
         </View>
         <Text style={styles.commentDate}>{item.created_at?.slice(0, 10)}</Text>
       </View>
@@ -86,7 +92,7 @@ export default function CommunityScreen() {
           ListEmptyComponent={
             <View style={styles.empty}>
               <View style={styles.emptyIconRing}>
-                <Text style={styles.emptyIcon}>💬</Text>
+                <Ionicons name="chatbubbles-outline" size={32} color={Colors.goldDark} />
               </View>
               <Text style={styles.emptyText}>暂无评论</Text>
               <Text style={styles.emptyHint}>分享您的游览体验</Text>
@@ -100,9 +106,11 @@ export default function CommunityScreen() {
             <Text style={styles.ratingLabel}>评分</Text>
             {[1, 2, 3, 4, 5].map((r) => (
               <TouchableOpacity key={r} onPress={() => setRating(r)}>
-                <Text style={[styles.ratingStar, r <= rating && styles.ratingStarActive]}>
-                  {r <= rating ? '★' : '☆'}
-                </Text>
+                <Ionicons
+                  name={r <= rating ? 'star' : 'star-outline'}
+                  size={26}
+                  color={r <= rating ? Colors.warning : Colors.divider}
+                />
               </TouchableOpacity>
             ))}
           </View>
@@ -148,7 +156,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: Spacing.lg,
     borderWidth: 2, borderColor: Colors.goldLight,
   },
-  emptyIcon: { fontSize: 32 },
   emptyText: { fontSize: 17, fontWeight: '700', color: Colors.ink, marginBottom: 4 },
   emptyHint: { fontSize: 13, color: Colors.textSecondary },
 
@@ -167,9 +174,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center',
   },
-  commentAvatarText: { fontSize: 14 },
   commentUser: { fontSize: 14, fontWeight: '600', color: Colors.ink },
-  commentStars: { fontSize: 12, letterSpacing: 1 },
   commentContent: { fontSize: 14, color: Colors.text, lineHeight: 22 },
   commentFooter: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -190,8 +195,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   ratingLabel: { fontSize: 13, color: Colors.textSecondary, marginRight: 4 },
-  ratingStar: { fontSize: 26, color: Colors.divider },
-  ratingStarActive: { color: Colors.gold },
   inputRow: { flexDirection: 'row', gap: 8 },
   textInput: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: BorderRadius.md,
