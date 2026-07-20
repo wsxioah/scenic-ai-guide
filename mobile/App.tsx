@@ -1,4 +1,6 @@
-import { Text, View } from 'react-native';
+import { Text, View, ActivityIndicator, LogBox } from 'react-native';
+LogBox.ignoreAllLogs();
+import { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -11,6 +13,7 @@ import ScenicDetailScreen from './src/screens/ScenicDetailScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 import SearchScreen from './src/screens/SearchScreen';
+import { useUserStore } from './src/stores/userStore';
 import { Colors } from './src/theme';
 
 
@@ -87,6 +90,20 @@ function HomeTabs() {
 }
 
 export default function App() {
+  const { isRestoring, restoreAuth } = useUserStore();
+
+  useEffect(() => {
+    restoreAuth();
+  }, []);
+
+  if (isRestoring) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.paper }}>
+        <ActivityIndicator size="large" color={Colors.goldDark} />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
       <Stack.Navigator>

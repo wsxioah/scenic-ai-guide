@@ -24,7 +24,7 @@
     <div id="live2dStage">
         <canvas id="live2dCanvas"></canvas>
         <div id="statusOverlay">加载中...</div>
-        <div id="dh-debug" style="position:absolute;top:4px;left:4px;color:#ff0;background:rgba(0,0,0,0.85);padding:3px 8px;border-radius:4px;font-family:monospace;font-size:12px;z-index:99;pointer-events:none">init...</div>
+        <div id="dh-debug" style="display:none"></div>
     </div>
 
     <script src="/digital-human/js/lipsync.js"></script>
@@ -211,124 +211,52 @@
         });
     }
 
-    // Silent audio playback for lip-sync analysis only (RN handles audible output)
-    // Uses a queue so chunks play sequentially without killing each other
-    var _lipSyncQueue = [];
-    var _lipSyncActive = false;
-    var _lipSyncSourceId = 0;  // incrementing ID to guard against stale ended events
-    var _sharedAudioCtx = null;  // shared AudioContext, reused across chunks
+    // ===== Continuous mouth animation (RN-driven, no AudioContext needed) =====
+    // RN sends "lipSync" when audio starts, "idle" when audio stops.
+    var _mouthRaf = null;
+    var _mouthActive = false;
+    var _mouthStart = 0;
 
-    function _getSharedAudioCtx() {
-        if (!_sharedAudioCtx || _sharedAudioCtx.state === "closed") {
-            _sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        return _sharedAudioCtx;
-    }
-
-    function _runLipSyncQueue() {
-        if (_lipSyncQueue.length === 0) {
-            _lipSyncActive = false;
-            dhDebug("online");
-            setMouthOpen(0);
+    function _startMouthAnim() {
+        if (_mouthActive) return;
+        // Model may not be loaded yet — poll until ready, then start
+        if (!model || !model.internalModel || !model.internalModel.coreModel) {
+            dhDebug("mouth:wait-model");
+            setTimeout(_startMouthAnim, 100);
             return;
         }
-        _lipSyncActive = true;
-        var url = _lipSyncQueue.shift();
-        var mySourceId = ++_lipSyncSourceId;
+        _mouthActive = true;
+        _mouthStart = performance.now();
+        dhDebug("mouth:on");
 
-        dhDebug("lipsync:" + mySourceId + " fetching...");
-
-        var ctx = _getSharedAudioCtx();
-        lipSync.audioContext = ctx;
-
-        // Resume AudioContext — essential for Android WebView
-        var ready = (ctx.state === "suspended")
-            ? ctx.resume().catch(function(e) { dhDebug("ctx_resume_err:"+e.message); })
-            : Promise.resolve();
-        ready.then(function() {
-            // Double-check state after resume attempt
-            if (ctx.state !== "running") {
-                dhDebug("lipsync:" + mySourceId + " ctx still " + ctx.state);
+        function tick(now) {
+            if (!_mouthActive) { _mouthRaf = null; return; }
+            var t = (now - _mouthStart) / 1000;
+            // Strong oscillation: base 4.5Hz, amplified for visible mouth movement
+            var base = Math.sin(t * Math.PI * 2 * 4.5);
+            var sec  = Math.sin(t * Math.PI * 2 * 8.0) * 0.35;
+            var env  = 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * 1.5);
+            // Rectify (only positive = mouth open), amplify, clamp
+            var mouth = Math.max(0, (base + sec) * env);
+            mouth = Math.min(1, mouth * 2.5);  // 2.5x boost for visibility
+            setMouthOpen(mouth);
+            // Show value in debug div every ~30 frames
+            if (Math.floor(t * 30) !== Math.floor((t - 0.033) * 30)) {
+                dhDebug("mouth:" + mouth.toFixed(2));
             }
-            return fetch(url);
-        })
-        .then(function(r) {
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            dhDebug("lipsync:" + mySourceId + " got " + Math.round(parseInt(r.headers.get("content-length")||"0")/1024) + "kB");
-            return r.arrayBuffer();
-        })
-        .then(function(buf) {
-            dhDebug("lipsync:" + mySourceId + " decoding " + Math.round(buf.byteLength/1024) + "kB");
-            return ctx.decodeAudioData(buf);
-        })
-        .then(function(audioBuffer) {
-            // Guard: another source has started since, don't bother
-            if (_lipSyncSourceId !== mySourceId) {
-                dhDebug("lipsync:" + mySourceId + " superseded");
-                return;
-            }
-
-            dhDebug("lipsync:" + mySourceId + " playing " + audioBuffer.duration.toFixed(1) + "s");
-
-            // Stop & disconnect any previous source so its ended event won't fire
-            if (lipSync.source) {
-                try { lipSync.source.stop(); } catch(e) {}
-                try { lipSync.source.disconnect(); } catch(e) {}
-            }
-
-            var source = ctx.createBufferSource();
-            source.buffer = audioBuffer;
-            var analyser = ctx.createAnalyser();
-            analyser.fftSize = 128;
-            analyser.smoothingTimeConstant = 0.1;
-            source.connect(analyser);
-
-            lipSync.source = source;
-            lipSync.analyser = analyser;
-            lipSync.isRunning = true;
-            lipSync.onMouthUpdate = function(mouthOpen) {
-                setMouthOpen(Math.max(0, Math.min(1, mouthOpen * 1.8)));
-            };
-            lipSync._loop();
-
-            // Notify RN that lip-sync analysis has started
-            // RN should sync audio playback to this event
-            notifyRN({ lipSyncStarted: true, id: mySourceId });
-
-            source.addEventListener("ended", function() {
-                dhDebug("lipsync:" + mySourceId + " done");
-                if (lipSync) lipSync.stop();
-                _runLipSyncQueue();  // play next in queue, not just "online"
-            });
-
-            source.start(0);
-        })
-        .catch(function(e) {
-            dhDebug("lipsync_err:" + (e.message || String(e)));
-            _runLipSyncQueue();  // skip this one, try next
-        });
+            _mouthRaf = requestAnimationFrame(tick);
+        }
+        _mouthRaf = requestAnimationFrame(tick);
     }
 
-    function playAudioForLipSync(url) {
-        if (!lipSync || !model) {
-            dhDebug("lipsync: no lipSync/model");
-            return;
-        }
-        // Stop any currently playing source immediately
-        if (lipSync.source) {
-            try { lipSync.source.stop(); } catch(e) {}
-            try { lipSync.source.disconnect(); } catch(e) {}
-        }
-        if (lipSync) lipSync.stop();
-        _lipSyncQueue.push(url);
-        if (!_lipSyncActive) {
-            _runLipSyncQueue();
-        }
+    function _stopMouthAnim() {
+        _mouthActive = false;
+        if (_mouthRaf) { cancelAnimationFrame(_mouthRaf); _mouthRaf = null; }
+        setMouthOpen(0);
+        dhDebug("mouth:off");
     }
 
-    // ===== Handle React Native commands (via injectJavaScript) =====
-    // postMessage bridge is unreliable on Android WebView, so RN calls
-    // this global function directly via injectJavaScript
+    // ===== Handle React Native commands =====
     window.dhHandleCommand = function(jsonStr) {
         var data;
         try { data = JSON.parse(jsonStr); } catch(e) { dhDebug("parse_err"); return; }
@@ -351,12 +279,11 @@
                 break;
 
             case "lipSync":
-                if (data.audioUrl) {
-                    playAudioForLipSync(data.audioUrl);
-                }
+                _startMouthAnim();
                 break;
 
             case "idle":
+                _stopMouthAnim();
                 if (audioElement) { audioElement.pause(); audioElement = null; }
                 if (lipSync) lipSync.stop();
                 setStatus("在线");
@@ -367,6 +294,22 @@
                 break;
         }
     };
+
+    // Receive commands via postMessage (more reliable than injectJavaScript on Android)
+    window.addEventListener('message', function(event) {
+        try {
+            if (typeof event.data === 'string') {
+                window.dhHandleCommand(event.data);
+            }
+        } catch(e) {}
+    });
+    document.addEventListener('message', function(event) {
+        try {
+            if (typeof event.data === 'string') {
+                window.dhHandleCommand(event.data);
+            }
+        } catch(e) {}
+    });
 
     // Unlock AudioContext on first user touch (required by mobile Web Audio policy)
     function unlockAudio() {

@@ -30,6 +30,16 @@ backend/.vite/
 # ChromaDB data
 chroma_data/
 
+# ML models (too large for git)
+backend/models/
+
+# Build output
+app-release.apk
+*.apk
+
+# Broken/backup files
+*.broken
+
 # IDE
 .idea/
 .vscode/

@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList,
-  StyleSheet, StatusBar, Platform,
+  StyleSheet, StatusBar, Platform, Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { REGIONS, ALL_PLACES, Place } from '../data/lingshanRegions';
 import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
+import { getLiveLocation, setPendingRouteNav, setFocusPlace } from '../services/locationSync';
 
 type RouteStep = 'start' | 'end';
 
@@ -60,36 +61,59 @@ export default function SearchScreen() {
         setRouteEnd(place);
       }
     } else {
-      navigation.navigate('Main', {
-        screen: 'Map',
-        params: { focus: { lat: place.lat, lng: place.lng, name: place.name, ts: Date.now() } },
-      });
+      setFocusPlace({ lat: place.lat, lng: place.lng, name: place.name });
+      navigation.goBack();
     }
   };
 
   const goNavigate = () => {
     if (!routeStart || !routeEnd) return;
-    navigation.navigate('Main', {
-      screen: 'Map',
-      params: {
-        routeNav: {
-          start: { lat: routeStart.lat, lng: routeStart.lng, name: routeStart.name },
-          end: { lat: routeEnd.lat, lng: routeEnd.lng, name: routeEnd.name },
-        },
-        ts: Date.now(),
-      },
+    console.log('[SearchScreen] goNavigate start:', JSON.stringify(routeStart), 'end:', JSON.stringify(routeEnd));
+    setPendingRouteNav({
+      start: { lat: routeStart.lat, lng: routeStart.lng, name: routeStart.name },
+      end: { lat: routeEnd.lat, lng: routeEnd.lng, name: routeEnd.name },
     });
     setIsRouteMode(false);
     setRouteStep('start');
     setRouteStart(null);
     setRouteEnd(null);
+    navigation.goBack();
   };
 
   const SCENIC_CENTER = { lat: 31.431031, lng: 120.106595 };
 
   const useMyLocation = () => {
-    setRouteStart({ id: '__myloc__', name: '我的位置（景区中心）', lat: SCENIC_CENTER.lat, lng: SCENIC_CENTER.lng });
-    setRouteStep('end');
+    const loc = getLiveLocation();
+    console.log('[SearchScreen] useMyLocation init:', JSON.stringify({ userLoc: loc.userLoc, mockLoc: loc.mockLoc }));
+    if (loc.mockLoc) {
+      setRouteStart({ id: '__myloc__', name: '我的位置（模拟）', lat: SCENIC_CENTER.lat, lng: SCENIC_CENTER.lng });
+      setRouteStep('end');
+      return;
+    }
+    if (loc.userLoc) {
+      setRouteStart({ id: '__myloc__', name: '我的位置', lat: loc.userLoc.lat, lng: loc.userLoc.lng });
+      setRouteStep('end');
+      return;
+    }
+    // GPS not ready — poll up to 20 times (10s) then give up
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries++;
+      const latest = getLiveLocation();
+      console.log('[SearchScreen] poll #' + tries + ':', JSON.stringify({ userLoc: latest.userLoc, mockLoc: latest.mockLoc }));
+      if (latest.mockLoc) {
+        setRouteStart({ id: '__myloc__', name: '我的位置（模拟）', lat: SCENIC_CENTER.lat, lng: SCENIC_CENTER.lng });
+        clearInterval(timer);
+        setRouteStep('end');
+      } else if (latest.userLoc) {
+        setRouteStart({ id: '__myloc__', name: '我的位置', lat: latest.userLoc.lat, lng: latest.userLoc.lng });
+        clearInterval(timer);
+        setRouteStep('end');
+      } else if (tries >= 20) {
+        clearInterval(timer);
+        Alert.alert('定位失败', '无法获取您的位置，请确认GPS已开启并在地图页面定位成功后再试');
+      }
+    }, 500);
   };
 
   const resetRoute = () => {

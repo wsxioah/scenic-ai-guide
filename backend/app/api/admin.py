@@ -56,205 +56,242 @@ async def dashboard(db: AsyncSession = Depends(get_db)):
 
 @router.get("/dashboard/full")
 async def dashboard_full(db: AsyncSession = Depends(get_db)):
-    """全量数据看板 — 仅灵山胜境相关数据"""
-    from datetime import datetime, timedelta
+    """全量数据看板 — 仅灵山胜境相关数据，单次请求优化"""
+    from datetime import datetime, timedelta, date
+    import asyncio
 
     # 子查询：仅灵山胜境景点名称
     lingshan_names = select(ScenicSpot.name)
     lingshan_filter = TouristBehavior.attraction_name.in_(lingshan_names)
 
-    # ── 基础统计 ──
-    user_count = (await db.execute(select(func.count(User.id)))).scalar()
-    spot_count = (await db.execute(select(func.count(ScenicSpot.id)))).scalar()
-    knowledge_count = (await db.execute(select(func.count(KnowledgePoint.id)))).scalar()
-    conversation_count = (await db.execute(select(func.count(Conversation.id)))).scalar()
-    message_count = (await db.execute(select(func.count(Message.id)))).scalar()
-    behavior_count = (await db.execute(
-        select(func.count(TouristBehavior.id)).where(lingshan_filter)
-    )).scalar()
-
-    # ── 游客年龄分布 ──
-    age_ranges = [
-        (0, 18, '0-18'), (19, 25, '19-25'), (26, 35, '26-35'),
-        (36, 45, '36-45'), (46, 55, '46-55'), (56, 99, '56+'),
-    ]
-    age_dist = []
-    for lo, hi, label in age_ranges:
-        cnt = (await db.execute(
-            select(func.count(TouristBehavior.id))
-            .where(lingshan_filter, TouristBehavior.age.between(lo, hi))
-        )).scalar()
-        age_dist.append({"range": label, "count": cnt})
-
-    # ── 性别分布 ──
-    male = (await db.execute(
-        select(func.count(TouristBehavior.id))
-        .where(lingshan_filter, TouristBehavior.gender == '男')
-    )).scalar()
-    female = (await db.execute(
-        select(func.count(TouristBehavior.id))
-        .where(lingshan_filter, TouristBehavior.gender == '女')
-    )).scalar()
-
-    # ── 满意度分布 ──
-    sat_dist = []
-    for rating in range(1, 6):
-        cnt = (await db.execute(
-            select(func.count(TouristBehavior.id))
-            .where(lingshan_filter, TouristBehavior.satisfaction == rating)
-        )).scalar()
-        sat_dist.append({"rating": rating, "count": cnt})
-    avg_sat = (await db.execute(
-        select(func.avg(TouristBehavior.satisfaction)).where(lingshan_filter)
-    )).scalar()
-
-    # ── 消费分析 ──
-    cost_keys = [
-        ('ticket_cost', '门票'), ('food_cost', '餐饮'),
-        ('shopping_cost', '购物'), ('transport_cost', '交通'),
-        ('entertainment_cost', '娱乐'),
-    ]
-    cost_breakdown = []
-    for col, label in cost_keys:
-        avg_val = (await db.execute(
-            select(func.avg(getattr(TouristBehavior, col))).where(lingshan_filter)
-        )).scalar()
-        total_val = (await db.execute(
-            select(func.sum(getattr(TouristBehavior, col))).where(lingshan_filter)
-        )).scalar()
-        cost_breakdown.append({
-            "category": label,
-            "avg": round(float(avg_val), 1) if avg_val else 0,
-            "total": round(float(total_val), 0) if total_val else 0,
-        })
-    avg_total_cost = (await db.execute(
-        select(func.avg(TouristBehavior.total_cost)).where(lingshan_filter)
-    )).scalar()
-
-    # ── 热门景点 TOP10 (仅灵山胜境16个景点) ──
-    result = await db.execute(
-        select(
-            TouristBehavior.attraction_name,
-            func.count(TouristBehavior.id).label('cnt'),
-            func.avg(TouristBehavior.satisfaction).label('sat'),
-            func.avg(TouristBehavior.total_cost).label('cost'),
-            func.avg(TouristBehavior.stay_duration).label('stay'),
+    # ── 并行：基础统计 + 游客画像（单查询多指标） ──
+    try:
+        base_stats, bh_stats_raw, trend_raw, spot_type_raw, group_raw, ks_raw = await asyncio.gather(
+            # 1. 基础统计（5个count）
+            db.execute(select(
+                func.count(User.id),
+                func.count(ScenicSpot.id),
+                func.count(KnowledgePoint.id),
+                func.count(Conversation.id),
+                func.count(Message.id),
+            )),
+            # 2. 游客画像总览（单查询：计数 + 年龄CASE + 性别 + 满意度 + 消费）
+            db.execute(
+                select(
+                    func.count(TouristBehavior.id),
+                    func.sum(func.if_(TouristBehavior.age.between(0, 18), 1, 0)),
+                    func.sum(func.if_(TouristBehavior.age.between(19, 25), 1, 0)),
+                    func.sum(func.if_(TouristBehavior.age.between(26, 35), 1, 0)),
+                    func.sum(func.if_(TouristBehavior.age.between(36, 45), 1, 0)),
+                    func.sum(func.if_(TouristBehavior.age.between(46, 55), 1, 0)),
+                    func.sum(func.if_(TouristBehavior.age >= 56, 1, 0)),
+                    func.sum(func.if_(TouristBehavior.gender == '男', 1, 0)),
+                    func.sum(func.if_(TouristBehavior.gender == '女', 1, 0)),
+                    func.sum(func.if_(TouristBehavior.satisfaction == 1, 1, 0)),
+                    func.sum(func.if_(TouristBehavior.satisfaction == 2, 1, 0)),
+                    func.sum(func.if_(TouristBehavior.satisfaction == 3, 1, 0)),
+                    func.sum(func.if_(TouristBehavior.satisfaction == 4, 1, 0)),
+                    func.sum(func.if_(TouristBehavior.satisfaction == 5, 1, 0)),
+                    func.avg(TouristBehavior.satisfaction),
+                    func.avg(TouristBehavior.ticket_cost),
+                    func.sum(TouristBehavior.ticket_cost),
+                    func.avg(TouristBehavior.food_cost),
+                    func.sum(TouristBehavior.food_cost),
+                    func.avg(TouristBehavior.shopping_cost),
+                    func.sum(TouristBehavior.shopping_cost),
+                    func.avg(TouristBehavior.transport_cost),
+                    func.sum(TouristBehavior.transport_cost),
+                    func.avg(TouristBehavior.entertainment_cost),
+                    func.sum(TouristBehavior.entertainment_cost),
+                    func.avg(TouristBehavior.total_cost),
+                ).where(lingshan_filter)
+            ),
+            # 3. 近30天对话趋势
+            db.execute(
+                select(
+                    func.date(Conversation.created_at).label('d'),
+                    func.count(Conversation.id),
+                )
+                .where(Conversation.created_at >= datetime.utcnow() - timedelta(days=30))
+                .group_by(func.date(Conversation.created_at))
+                .order_by('d')
+            ),
+            # 4. 景区类型分布
+            db.execute(
+                select(
+                    TouristBehavior.attraction_type,
+                    func.count(TouristBehavior.id),
+                    func.avg(TouristBehavior.satisfaction),
+                )
+                .where(lingshan_filter)
+                .group_by(TouristBehavior.attraction_type)
+                .order_by(func.count(TouristBehavior.id).desc())
+            ),
+            # 5. 团体规模分布
+            db.execute(
+                select(
+                    TouristBehavior.group_size,
+                    func.count(TouristBehavior.id),
+                )
+                .where(lingshan_filter)
+                .group_by(TouristBehavior.group_size)
+                .order_by(TouristBehavior.group_size)
+            ),
+            # 6. 知识库来源
+            db.execute(
+                select(
+                    func.coalesce(KnowledgePoint.source, '未分类'),
+                    func.count(KnowledgePoint.id),
+                )
+                .group_by(KnowledgePoint.source)
+                .order_by(func.count(KnowledgePoint.id).desc())
+            ),
         )
-        .where(lingshan_filter)
-        .group_by(TouristBehavior.attraction_name)
-        .order_by(func.count(TouristBehavior.id).desc())
-        .limit(10)
-    )
-    hot_attractions = [
-        {
-            "name": r[0], "visit_count": r[1],
-            "avg_satisfaction": round(float(r[2]), 1) if r[2] else 0,
-            "avg_cost": round(float(r[3]), 0) if r[3] else 0,
-            "avg_stay_min": round(float(r[4]), 1) if r[4] else 0,
+    except Exception:
+        logger.exception("dashboard_full gather #1 failed")
+        return {
+            "stats": {"users": 0, "scenic_spots": 0, "knowledge_points": 0, "conversations": 0, "messages": 0, "behavior_records": 0},
+            "tourist_demographics": {"age_distribution": [], "gender": {"male": 0, "female": 0}},
+            "satisfaction": {"distribution": [], "average": 0},
+            "spending": {"breakdown": [], "avg_total_cost": 0},
+            "hot_attractions": [],
+            "type_stats": [],
+            "group_distribution": [],
+            "conversation_trend": [],
+            "knowledge_sources": [],
+            "qa_satisfaction": {"positive": 0, "negative": 0, "rate": 0},
+            "recent_queries": [],
         }
-        for r in result.fetchall()
-    ]
 
-    # ── 景区类型分布 ──
-    result = await db.execute(
-        select(
-            TouristBehavior.attraction_type,
-            func.count(TouristBehavior.id).label('cnt'),
-            func.avg(TouristBehavior.satisfaction).label('sat'),
-        )
-        .where(lingshan_filter)
-        .group_by(TouristBehavior.attraction_type)
-        .order_by(func.count(TouristBehavior.id).desc())
-    )
+    # ── 数据提取 #1 ──
+
+    bs = base_stats.one()
+    stats = {
+        "users": bs[0],
+        "scenic_spots": bs[1],
+        "knowledge_points": bs[2],
+        "conversations": bs[3],
+        "messages": bs[4],
+        "behavior_records": 0,
+    }
+
+    bh = bh_stats_raw.one()
+    stats["behavior_records"] = bh[0] or 0
+
+    tourist_demographics = {
+        "age_distribution": [
+            {"range": "≤18岁", "count": bh[1] or 0},
+            {"range": "19-25岁", "count": bh[2] or 0},
+            {"range": "26-35岁", "count": bh[3] or 0},
+            {"range": "36-45岁", "count": bh[4] or 0},
+            {"range": "46-55岁", "count": bh[5] or 0},
+            {"range": "≥56岁", "count": bh[6] or 0},
+        ],
+        "gender": {"male": bh[7] or 0, "female": bh[8] or 0},
+    }
+
+    satisfaction = {
+        "distribution": [
+            {"rating": 1, "count": bh[9] or 0},
+            {"rating": 2, "count": bh[10] or 0},
+            {"rating": 3, "count": bh[11] or 0},
+            {"rating": 4, "count": bh[12] or 0},
+            {"rating": 5, "count": bh[13] or 0},
+        ],
+        "average": round(float(bh[14]), 1) if bh[14] else 0,
+    }
+
+    spending = {
+        "breakdown": [
+            {"category": "门票", "avg": round(float(bh[15]), 0) if bh[15] else 0},
+            {"category": "餐饮", "avg": round(float(bh[17]), 0) if bh[17] else 0},
+            {"category": "购物", "avg": round(float(bh[19]), 0) if bh[19] else 0},
+            {"category": "交通", "avg": round(float(bh[21]), 0) if bh[21] else 0},
+            {"category": "娱乐", "avg": round(float(bh[23]), 0) if bh[23] else 0},
+        ],
+        "avg_total_cost": round(float(bh[24]), 0) if bh[24] else 0,
+    }
+
+    trend_rows = trend_raw.fetchall()
+    trend_dict = {r[0]: r[1] for r in trend_rows}
+    conversation_trend = []
+    for i in range(29, -1, -1):
+        d = (datetime.utcnow() - timedelta(days=i)).date()
+        conversation_trend.append({"date": d.strftime("%m-%d"), "count": trend_dict.get(d, 0)})
+
     type_stats = [
         {"type": r[0], "count": r[1], "avg_satisfaction": round(float(r[2]), 1) if r[2] else 0}
-        for r in result.fetchall()
+        for r in spot_type_raw.fetchall()
     ]
 
-    # ── 团体规模分布 ──
-    result = await db.execute(
-        select(
-            TouristBehavior.group_size,
-            func.count(TouristBehavior.id),
+    group_distribution = [{"size": r[0], "count": r[1]} for r in group_raw.fetchall()]
+
+    knowledge_sources = [{"source": r[0], "count": r[1]} for r in ks_raw.fetchall()]
+
+    # ── 并行 #2：热门景点 + 问答满意度 + 近期查询 ──
+    try:
+        hot_result, qa_pos, qa_neg, recent_msgs = await asyncio.gather(
+            db.execute(
+                select(
+                    TouristBehavior.attraction_name,
+                    TouristBehavior.attraction_type,
+                    func.count(TouristBehavior.id).label('visit_count'),
+                    func.avg(TouristBehavior.satisfaction).label('avg_satisfaction'),
+                    func.avg(TouristBehavior.total_cost).label('avg_cost'),
+                    func.avg(TouristBehavior.stay_duration).label('avg_stay'),
+                )
+                .where(lingshan_filter)
+                .group_by(TouristBehavior.attraction_name)
+                .order_by(func.count(TouristBehavior.id).desc())
+                .limit(10)
+            ),
+            db.execute(select(func.count(Message.id)).where(Message.feedback == 1)),
+            db.execute(select(func.count(Message.id)).where(Message.feedback == -1)),
+            db.execute(
+                select(Message.content)
+                .where(Message.role == "user")
+                .order_by(Message.created_at.desc())
+                .limit(20)
+            ),
         )
-        .where(lingshan_filter)
-        .group_by(TouristBehavior.group_size)
-        .order_by(TouristBehavior.group_size)
-    )
-    group_dist = [{"size": r[0], "count": r[1]} for r in result.fetchall()]
+    except Exception:
+        logger.exception("dashboard_full gather #2 failed")
+        hot_attractions = []
+        qa_satisfaction = {"positive": 0, "negative": 0, "rate": 0}
+        recent_queries = []
+    else:
+        hot_attractions = [
+            {
+                "name": r[0], "type": r[1],
+                "visit_count": r[2],
+                "avg_satisfaction": round(float(r[3]), 1) if r[3] else 0,
+                "avg_cost": round(float(r[4]), 0) if r[4] else 0,
+                "avg_stay_min": round(float(r[5]), 1) if r[5] else 0,
+            }
+            for r in hot_result.fetchall()
+        ]
 
-    # ── 近30天对话趋势 ──
-    trend = []
-    for i in range(29, -1, -1):
-        date = datetime.utcnow() - timedelta(days=i)
-        date_start = date.replace(hour=0, minute=0, second=0, microsecond=0)
-        date_end = date.replace(hour=23, minute=59, second=59, microsecond=999999)
-        cnt = (await db.execute(
-            select(func.count(Conversation.id))
-            .where(Conversation.created_at.between(date_start, date_end))
-        )).scalar()
-        trend.append({"date": date.strftime("%m-%d"), "count": cnt})
+        positive = qa_pos.scalar() or 0
+        negative = qa_neg.scalar() or 0
+        qa_satisfaction = {
+            "positive": positive,
+            "negative": negative,
+            "rate": round(positive / (positive + negative) * 100, 1) if (positive + negative) > 0 else 0,
+        }
 
-    # ── 知识库来源统计 ──
-    result = await db.execute(
-        select(
-            func.coalesce(KnowledgePoint.source, '未分类'),
-            func.count(KnowledgePoint.id),
-        )
-        .group_by(KnowledgePoint.source)
-        .order_by(func.count(KnowledgePoint.id).desc())
-    )
-    knowledge_sources = [{"source": r[0], "count": r[1]} for r in result.fetchall()]
-
-    # ── 问答满意度 ──
-    pos = (await db.execute(
-        select(func.count(Message.id)).where(Message.feedback == 1)
-    )).scalar()
-    neg = (await db.execute(
-        select(func.count(Message.id)).where(Message.feedback == -1)
-    )).scalar()
-    total_feedback = pos + neg
-
-    # ── 最近热门问题 ──
-    result = await db.execute(
-        select(Message.content)
-        .where(Message.role == "user")
-        .order_by(Message.created_at.desc()).limit(20)
-    )
-    recent_queries = [r[0][:60] for r in result.fetchall()]
+        recent_queries = [r[0][:50] for r in recent_msgs.fetchall()]
 
     return {
-        "stats": {
-            "users": user_count,
-            "scenic_spots": spot_count,
-            "knowledge_points": knowledge_count,
-            "conversations": conversation_count,
-            "messages": message_count,
-            "behavior_records": behavior_count,
-        },
-        "tourist_demographics": {
-            "age_distribution": age_dist,
-            "gender": {"male": male, "female": female},
-            "total_records": behavior_count,
-        },
-        "satisfaction": {
-            "distribution": sat_dist,
-            "average": round(float(avg_sat), 2) if avg_sat else 0,
-        },
-        "spending": {
-            "breakdown": cost_breakdown,
-            "avg_total_cost": round(float(avg_total_cost), 1) if avg_total_cost else 0,
-        },
+        "stats": stats,
+        "tourist_demographics": tourist_demographics,
+        "satisfaction": satisfaction,
+        "spending": spending,
         "hot_attractions": hot_attractions,
         "type_stats": type_stats,
-        "group_distribution": group_dist,
-        "conversation_trend": trend,
+        "group_distribution": group_distribution,
+        "conversation_trend": conversation_trend,
         "knowledge_sources": knowledge_sources,
-        "qa_satisfaction": {
-            "positive": pos,
-            "negative": neg,
-            "rate": round(pos / total_feedback * 100, 1) if total_feedback > 0 else 0,
-        },
+        "qa_satisfaction": qa_satisfaction,
         "recent_queries": recent_queries,
     }
 

@@ -93,7 +93,7 @@ class RecommendService:
                         'avg_satisfaction': round(float(r[3]), 1) if r[3] else 0,
                         'avg_cost': round(float(r[4]), 0) if r[4] else 0,
                     }
-                    if budget and rec['avg_cost'] > budget * 1.5:
+                    if budget is not None and rec['avg_cost'] > budget * 1.5:
                         continue
                     recommendations.append(rec)
 
@@ -103,7 +103,7 @@ class RecommendService:
             return []
 
     async def get_type_stats(self) -> list[dict]:
-        """Get aggregate statistics by attraction type"""
+        """Get aggregate statistics by attraction type (灵山 only)"""
         try:
             async with async_session() as db:
                 result = await db.execute(
@@ -115,6 +115,7 @@ class RecommendService:
                         func.avg(TouristBehavior.stay_duration).label('avg_stay'),
                         func.avg(TouristBehavior.group_size).label('avg_group'),
                     )
+                    .where(TouristBehavior.attraction_name.in_(select(ScenicSpot.name)))
                     .group_by(TouristBehavior.attraction_type)
                     .order_by(func.count(TouristBehavior.id).desc())
                 )

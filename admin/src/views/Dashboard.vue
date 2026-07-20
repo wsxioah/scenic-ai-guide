@@ -240,7 +240,7 @@ onUnmounted(() => {
     <!-- Row: Hot attractions table + Type distribution -->
     <a-row :gutter="[16, 16]" style="margin-bottom: 20px">
       <a-col :span="14">
-        <a-card title="热门景点 TOP10（基于 14 万条行为数据）" size="small">
+        <a-card :title="`热门景点 TOP10（基于 ${stats.behavior_records.toLocaleString()} 条行为数据）`" size="small">
           <a-table
             :columns="[
               { title: '#', dataIndex: 'rank', width: 45 },

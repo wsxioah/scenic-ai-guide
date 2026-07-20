@@ -5,10 +5,11 @@ import {
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import * as Location from 'expo-location';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { SERVER_URL } from '../config';
 import { Colors, Shadows } from '../theme';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { setLiveUserLoc, setLiveMockLoc, consumePendingRouteNav, consumeFocusPlace } from '../services/locationSync';
 
 // ====== 灵山胜境 · 真实数据 ======
 const LINGSHAN_CENTER = { lat: 31.431031, lng: 120.106595 }; // 九龙灌浴（景区中心，实采）
@@ -85,28 +86,63 @@ const SCENIC_INTRO = '灵山胜境位于无锡太湖西北岸马山镇，国家5
 
 export default function MapScreen() {
   const navigation = useNavigation<any>();
-  const route = useRoute<any>();
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null);
+  const [mockLoc, setMockLoc] = useState(false);
+
+  // Sync live location to shared service for SearchScreen
+  // Also force-sync on mount to clean up stale module vars from Fast Refresh
+  useEffect(() => { setLiveUserLoc(null); setLiveMockLoc(false); }, []);
+  useEffect(() => { setLiveUserLoc(userLoc); }, [userLoc]);
+  useEffect(() => { setLiveMockLoc(mockLoc); }, [mockLoc]);
   const [error, setError] = useState('');
+  const [locStatus, setLocStatus] = useState<'idle'|'searching'|'acquired'|'failed'>('idle');
+  const [manualLocMode, setManualLocMode] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
-  const [mockLoc, setMockLoc] = useState(false);
   const [navStart, setNavStart] = useState<{ lat: number; lng: number; name: string } | null>(null);
   const webViewRef = useRef<WebView>(null);
   const locWatchRef = useRef<Location.LocationSubscription | null>(null);
   const userLocRef = useRef<{ lat: number; lng: number } | null>(null);
+  const userLocIsBd09Ref = useRef(false);
 
   useEffect(() => { userLocRef.current = userLoc; }, [userLoc]);
+
+  // Timeout wrapper for getCurrentPositionAsync (uses Promise.race since RN doesn't support AbortController)
+  const getPositionWithTimeout = useCallback(async (options: Location.LocationOptions, timeoutMs = 10000) => {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('GPS_TIMEOUT')), timeoutMs)
+    );
+    return Promise.race([
+      Location.getCurrentPositionAsync(options),
+      timeoutPromise,
+    ]);
+  }, []);
 
   useEffect(() => {
     (async () => {
       try {
+        setLocStatus('searching');
+
+        // 0. Check system GPS is enabled
+        try {
+          const enabled = await Location.hasServicesEnabledAsync();
+          if (!enabled) {
+            setLocStatus('failed');
+            setError('请打开手机定位服务(GPS)后再试');
+            return;
+          }
+        } catch (svcErr) {
+          // hasServicesEnabledAsync may not be available on all devices
+          console.warn('[GPS] hasServicesEnabledAsync error:', String(svcErr));
+        }
+
         const { status } = await Location.requestForegroundPermissionsAsync();
         console.log('[GPS] permission:', status);
         if (status !== 'granted') {
-          console.warn('[GPS] 定位权限未授予');
+          setLocStatus('failed');
+          setError('定位权限被拒绝，请在设置中允许位置权限');
           return;
         }
 
@@ -116,38 +152,45 @@ export default function MapScreen() {
           if (last) {
             console.log('[GPS] last known:', last.coords.latitude, last.coords.longitude);
             setUserLoc({ lat: last.coords.latitude, lng: last.coords.longitude });
+            setLocStatus('acquired');
           }
         } catch {}
 
-        // 2. Start continuous watch
+        // 2. Start continuous RN watch (Balanced — uses WiFi+Cell+GPS, faster)
         locWatchRef.current = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, distanceInterval: 5, timeInterval: 2000 },
+          { accuracy: Location.Accuracy.Balanced, distanceInterval: 10, timeInterval: 3000 },
           (newLoc) => {
-            console.log('[GPS] update:', newLoc.coords.latitude, newLoc.coords.longitude);
+            console.log('[GPS] RN update:', newLoc.coords.latitude, newLoc.coords.longitude);
             setUserLoc({ lat: newLoc.coords.latitude, lng: newLoc.coords.longitude });
+            setLocStatus('acquired');
           },
         );
-        console.log('[GPS] watch started');
+        console.log('[GPS] RN watch started (Balanced)');
 
-        // 3. Try fresh GPS fix (may be slow but watch already running)
+        // 3. Try fresh GPS fix with timeout (Balanced first for speed)
         try {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.High,
-          });
-          console.log('[GPS] fresh fix:', loc.coords.latitude, loc.coords.longitude);
+          const loc = await getPositionWithTimeout(
+            { accuracy: Location.Accuracy.Balanced },
+            12000,
+          );
+          console.log('[GPS] RN fresh fix:', loc.coords.latitude, loc.coords.longitude);
           setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+          setLocStatus('acquired');
         } catch (posErr) {
-          console.warn('[GPS] fresh fix failed, using last known or waiting for watch:', String(posErr));
+          console.warn('[GPS] RN fresh fix failed, relying on watch + Baidu:', String(posErr));
+          // Don't set failed yet — Baidu geo may still work
         }
       } catch (e) {
         console.warn('[GPS] error:', JSON.stringify(e));
+        setLocStatus('failed');
+        setError('定位服务不可用，可尝试手动点击地图设置位置');
       }
     })();
 
     return () => {
       locWatchRef.current?.remove();
     };
-  }, []);
+  }, [getPositionWithTimeout]);
 
   const postToMap = useCallback((data: object) => {
     if (webViewRef.current) {
@@ -166,21 +209,11 @@ export default function MapScreen() {
     postToMap({ type: 'setFacilities', facilities: facs });
   }, [mapReady, activeCategory, postToMap]);
 
-  // Center the map when a place is picked from the search page
-  useEffect(() => {
-    const focus = route.params?.focus;
-    if (!focus || !mapReady) return;
-    postToMap({ type: 'centerOn', lat: focus.lat, lng: focus.lng });
-  }, [route.params, mapReady, postToMap]);
-
-  // Route navigation from SearchScreen
-  useEffect(() => {
-    const rn = route.params?.routeNav;
-    if (!rn || !mapReady) return;
+  // Route navigation from SearchScreen — consume shared state (avoids pushing new Main screen)
+  const applyRouteNav = useCallback((rn: { start: { lat: number; lng: number; name: string }; end: { lat: number; lng: number; name: string } }) => {
     const { start, end } = rn;
-    // Center on destination
+    console.log('[MapScreen] applyRouteNav start:', JSON.stringify(start), 'end:', JSON.stringify(end));
     postToMap({ type: 'centerOn', lat: end.lat, lng: end.lng });
-    // Draw walking route — 0/0 means "use my location"
     setTimeout(() => {
       postToMap({
         type: 'findWalkingRoute',
@@ -189,7 +222,25 @@ export default function MapScreen() {
         fromLng: start.lng || undefined,
       });
     }, 500);
-  }, [route.params, mapReady, postToMap]);
+  }, [postToMap]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    const rn = consumePendingRouteNav();
+    if (rn) applyRouteNav(rn);
+  }, [mapReady, applyRouteNav]);
+
+  // Also check pending route nav / focus place when MapScreen regains focus (goBack from SearchScreen)
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', () => {
+      if (!mapReady) return;
+      const rn = consumePendingRouteNav();
+      if (rn) { applyRouteNav(rn); return; }
+      const fp = consumeFocusPlace();
+      if (fp) postToMap({ type: 'centerOn', lat: fp.lat, lng: fp.lng });
+    });
+    return unsub;
+  }, [navigation, mapReady, applyRouteNav, postToMap]);
 
   const followRoute = useCallback((routeId: string) => {
     setSelectedRoute(routeId);
@@ -203,17 +254,30 @@ export default function MapScreen() {
     }
   }, [postToMap]);
 
+  // Send real GPS to map (suppressed while mock is active)
   useEffect(() => {
-    if (!mapReady || !userLoc) return;
+    if (!mapReady || !userLoc || mockLoc) return;
     console.log('[GPS] sending to map:', userLoc.lat, userLoc.lng);
-    postToMap({ type: 'setUserLocation', lat: userLoc.lat, lng: userLoc.lng });
-  }, [mapReady, userLoc, postToMap]);
+    postToMap({
+      type: 'setUserLocation',
+      lat: userLoc.lat,
+      lng: userLoc.lng,
+      source: userLocIsBd09Ref.current ? 'baidu' : 'rn',
+    });
+  }, [mapReady, userLoc, mockLoc, postToMap]);
 
-  // Mock location for navigation testing — sets user position to scenic center
+  // Mock location toggle — click to set scenic center, click again to cancel
   useEffect(() => {
     if (!mapReady) return;
     if (mockLoc) {
-      postToMap({ type: 'setUserLocation', lat: LINGSHAN_CENTER.lat, lng: LINGSHAN_CENTER.lng });
+      postToMap({ type: 'setUserLocation', lat: LINGSHAN_CENTER.lat, lng: LINGSHAN_CENTER.lng, source: 'baidu' });
+    } else if (userLocRef.current) {
+      postToMap({
+        type: 'setUserLocation',
+        lat: userLocRef.current.lat,
+        lng: userLocRef.current.lng,
+        source: userLocIsBd09Ref.current ? 'baidu' : 'rn',
+      });
     }
   }, [mapReady, mockLoc, postToMap]);
 
@@ -229,13 +293,66 @@ export default function MapScreen() {
         setError('地图错误: ' + data.message);
       } else if (data.type === 'log') {
         console.log('[MapView Log] ' + data.message);
+      } else if (data.type === 'userLocation') {
+        console.log('[GPS] Baidu map geo:', data.lat, data.lng, 'source:', data.source);
+        if (data.source === 'baidu') {
+          // Baidu geolocation returns BD09 — store directly
+          setUserLoc({ lat: data.lat, lng: data.lng });
+          userLocIsBd09Ref.current = true;
+        } else {
+          setUserLoc({ lat: data.lat, lng: data.lng });
+          userLocIsBd09Ref.current = false;
+        }
+        setLocStatus('acquired');
+        setError('');
+        setManualLocMode(false);
       }
     } catch {}
   }, []);
 
   const goToMyLocation = useCallback(() => {
+    setLocStatus('searching');
+    // Try centering immediately (works if already have a position)
     postToMap({ type: 'centerOnUser' });
-  }, [postToMap]);
+
+    // Parallel: trigger RN GPS + Baidu geolocation in WebView
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') { setLocStatus('failed'); return; }
+        const loc = await getPositionWithTimeout(
+          { accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true },
+          10000,
+        );
+        console.log('[GPS] manual fix:', loc.coords.latitude, loc.coords.longitude);
+        setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        setLocStatus('acquired');
+        setError('');
+        setTimeout(() => postToMap({ type: 'centerOnUser' }), 400);
+      } catch (e) {
+        console.warn('[GPS] RN manual fix failed, trying Baidu geo:', String(e));
+        // RN GPS failed — try Baidu Maps geolocation
+        postToMap({ type: 'retryBaiduGeo' });
+        setTimeout(() => {
+          if (!userLocRef.current) {
+            setLocStatus('failed');
+            setError('自动定位失败，请点击"手动定位"在地图上长按设置您的位置');
+          }
+        }, 10000);
+      }
+    })();
+  }, [postToMap, getPositionWithTimeout]);
+
+  const toggleManualLoc = useCallback(() => {
+    if (manualLocMode) {
+      setManualLocMode(false);
+      postToMap({ type: 'stopManualLoc' });
+    } else {
+      setManualLocMode(true);
+      setError('请点击地图标记你的实际位置');
+      postToMap({ type: 'startManualLoc' });
+    }
+  }, [manualLocMode, postToMap]);
 
   const goToScenicCenter = useCallback(() => {
     postToMap({ type: 'centerOn', lat: LINGSHAN_CENTER.lat, lng: LINGSHAN_CENTER.lng, zoom: 16 });
@@ -243,10 +360,8 @@ export default function MapScreen() {
 
   const openNavigation = (lat: number, lng: number, name: string) => {
     const encodedName = encodeURIComponent(name);
-    const originLoc = mockLoc ? LINGSHAN_CENTER : userLocRef.current;
-    const origin = originLoc
-      ? `&origin=latlng:${originLoc.lat},${originLoc.lng}|name=我的位置`
-      : '';
+    const originLoc = mockLoc ? LINGSHAN_CENTER : (userLocRef.current || LINGSHAN_CENTER);
+    const origin = `&origin=latlng:${originLoc.lat},${originLoc.lng}|name=我的位置`;
     const url = `https://api.map.baidu.com/direction?destination=latlng:${lat},${lng}|name:${encodedName}${origin}&mode=walking&region=无锡&output=html&src=scenicAiGuide`;
     Linking.openURL(url).catch(() => {
       const fallback = `baidumap://map/direction?destination=${lat},${lng}&coord_type=bd09ll&mode=walking&src=scenic.ai.guide`;
@@ -257,15 +372,33 @@ export default function MapScreen() {
   };
 
   const retryLocation = () => {
+    setError('');
+    setLocStatus('searching');
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
-          setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-          setError('');
+        if (status !== 'granted') {
+          setLocStatus('failed');
+          setError('定位权限被拒绝');
+          return;
         }
-      } catch {}
+        const loc = await getPositionWithTimeout(
+          { accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: true },
+          10000,
+        );
+        setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+        setLocStatus('acquired');
+        setError('');
+      } catch {
+        // RN failed, try Baidu geo
+        postToMap({ type: 'retryBaiduGeo' });
+        setTimeout(() => {
+          if (!userLocRef.current) {
+            setLocStatus('failed');
+            setError('自动定位失败，请尝试手动定位');
+          }
+        }, 10000);
+      }
     })();
   };
 
@@ -291,14 +424,46 @@ export default function MapScreen() {
 
       {/* Top bar */}
       <View style={styles.topBar}>
-        <Text style={styles.topBarTitle}>灵山胜境</Text>
-        <Text style={styles.topBarSub}>{SCENIC_SPOTS.length} 个景点</Text>
+        <View>
+          <Text style={styles.topBarTitle}>灵山胜境</Text>
+          <Text style={styles.topBarSub}>{SCENIC_SPOTS.length} 个景点</Text>
+        </View>
+        {/* GPS status indicator */}
+        <View style={styles.gpsStatus}>
+          <View style={[styles.gpsDot,
+            locStatus === 'acquired' && styles.gpsDotOk,
+            locStatus === 'searching' && styles.gpsDotSearching,
+            locStatus === 'failed' && styles.gpsDotFail,
+          ]} />
+          <Text style={styles.gpsLabel}>
+            {locStatus === 'acquired' ? '已定位' : locStatus === 'searching' ? '定位中' : locStatus === 'failed' ? '未定位' : '待定位'}
+          </Text>
+        </View>
       </View>
 
       {/* Info & Routes toggle button */}
       <TouchableOpacity style={styles.infoToggle} onPress={() => setShowInfo(!showInfo)}>
         <Text style={{ fontSize: 13, fontWeight: '600', color: Colors.ink }}>{showInfo ? '✕' : '路线'}</Text>
       </TouchableOpacity>
+
+      {/* Map control buttons */}
+      <View style={styles.mapControls}>
+        <TouchableOpacity style={styles.mapCtrlBtn} onPress={goToMyLocation}>
+          <Ionicons name="locate" size={20} color={Colors.goldDark} />
+          <Text style={styles.mapCtrlLabel}>定位</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.mapCtrlBtn} onPress={goToScenicCenter}>
+          <MaterialCommunityIcons name="bank" size={20} color={Colors.goldDark} />
+          <Text style={styles.mapCtrlLabel}>景区</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.mapCtrlBtn, mockLoc && { backgroundColor: Colors.jade }]}
+          onPress={() => setMockLoc(!mockLoc)}
+        >
+          <MaterialCommunityIcons name="crosshairs-gps" size={20} color={mockLoc ? Colors.white : Colors.goldDark} />
+          <Text style={[styles.mapCtrlLabel, mockLoc && { color: Colors.white }]}>模拟</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Bottom info / routes panel */}
       {showInfo && (
@@ -329,15 +494,21 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Error banner */}
+      {/* Enhanced error / status banner */}
       {error ? (
         <View style={styles.errorBanner}>
-          <Text style={styles.errorBannerText}>{error}</Text>
-          {!userLoc && (
+          <Ionicons name="warning" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
+          <Text style={styles.errorBannerText} numberOfLines={3}>{error}</Text>
+          <View style={styles.errorBannerBtns}>
             <TouchableOpacity onPress={retryLocation}>
               <Text style={styles.errorBannerBtn}>重试</Text>
             </TouchableOpacity>
-          )}
+            {!userLoc && locStatus === 'failed' && (
+              <TouchableOpacity onPress={toggleManualLoc}>
+                <Text style={[styles.errorBannerBtn, { color: Colors.goldDark, marginLeft: 12 }]}>{manualLocMode ? '取消' : '手动定位'}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       ) : null}
 
@@ -418,24 +589,6 @@ export default function MapScreen() {
         </View>
       )}
 
-      {/* Map control buttons */}
-      <View style={styles.mapControls}>
-        <TouchableOpacity style={styles.mapCtrlBtn} onPress={goToMyLocation}>
-          <Ionicons name="locate" size={20} color={Colors.goldDark} />
-          <Text style={styles.mapCtrlLabel}>定位</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.mapCtrlBtn} onPress={goToScenicCenter}>
-          <MaterialCommunityIcons name="bank" size={20} color={Colors.goldDark} />
-          <Text style={styles.mapCtrlLabel}>景区</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.mapCtrlBtn, mockLoc && { backgroundColor: Colors.jade }]}
-          onPress={() => setMockLoc(!mockLoc)}
-        >
-          <MaterialCommunityIcons name="crosshairs-gps" size={20} color={mockLoc ? Colors.white : Colors.goldDark} />
-          <Text style={[styles.mapCtrlLabel, mockLoc && { color: Colors.white }]}>模拟</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
@@ -449,9 +602,26 @@ const styles = StyleSheet.create({
     paddingBottom: 10, paddingHorizontal: 16,
     backgroundColor: 'rgba(255,255,255,0.95)',
     borderBottomWidth: 0.5, borderBottomColor: Colors.divider,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   topBarTitle: { color: Colors.ink, fontSize: 17, fontWeight: '700' },
   topBarSub: { color: Colors.textSecondary, fontSize: 11, marginTop: 2 },
+  gpsStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  gpsDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#9CA3AF' },
+  gpsDotOk: { backgroundColor: '#22C55E' },
+  gpsDotSearching: { backgroundColor: '#F59E0B' },
+  gpsDotFail: { backgroundColor: '#EF4444' },
+  gpsLabel: { fontSize: 11, color: Colors.textSecondary },
+  mapControls: {
+    position: 'absolute', right: 12, top: 112,
+    alignItems: 'center', gap: 8,
+  },
+  mapCtrlBtn: {
+    width: 48, height: 48, borderRadius: 12,
+    backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center',
+    ...Shadows.sm,
+  },
+  mapCtrlLabel: { fontSize: 9, color: Colors.textSecondary, marginTop: 1 },
   infoToggle: {
     position: 'absolute', right: 12, top: Platform.OS === 'ios' ? 100 : 86,
     width: 36, height: 36, borderRadius: 18,
@@ -481,23 +651,14 @@ const styles = StyleSheet.create({
   panelClose: { alignItems: 'center', marginTop: 8, paddingVertical: 8 },
   panelCloseText: { color: Colors.textSecondary, fontSize: 13 },
   errorBanner: {
-    position: 'absolute', right: 12, top: 132,
-    backgroundColor: 'rgba(181,69,58,0.08)', paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 6, borderWidth: 0.5, borderColor: Colors.vermilionLight,
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    position: 'absolute', left: 12, right: 12, top: 132,
+    backgroundColor: 'rgba(30,30,30,0.92)', paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 8, borderWidth: 0.5, borderColor: '#F59E0B',
+    flexDirection: 'row', alignItems: 'flex-start', flexWrap: 'wrap', gap: 4,
   },
-  errorBannerText: { color: Colors.vermilion, fontSize: 12 },
-  errorBannerBtn: { color: Colors.goldDark, fontSize: 12, fontWeight: '600' },
-  mapControls: {
-    position: 'absolute', right: 12, top: 112,
-    alignItems: 'center', gap: 8,
-  },
-  mapCtrlBtn: {
-    width: 48, height: 48, borderRadius: 12,
-    backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center',
-    ...Shadows.sm,
-  },
-  mapCtrlLabel: { fontSize: 9, color: Colors.textSecondary, marginTop: 1 },
+  errorBannerText: { color: '#FDE68A', fontSize: 12, flex: 1, minWidth: 120, lineHeight: 16 },
+  errorBannerBtns: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' },
+  errorBannerBtn: { color: '#F59E0B', fontSize: 12, fontWeight: '600', paddingHorizontal: 4 },
   bottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: 12, paddingTop: 10,

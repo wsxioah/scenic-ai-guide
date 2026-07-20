@@ -8,14 +8,9 @@ import api from '../services/api';
 import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
 
 interface RecognizeResult {
-  is_scenic: boolean;
-  spot_name: string;
+  name: string;
   confidence: number;
-  category?: string;
-  description?: string;
-  ai_description?: string;
-  lat?: number;
-  lng?: number;
+  top5: { name: string; confidence: number }[];
 }
 
 interface Props {
@@ -42,6 +37,18 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
     onClose();
   };
 
+  const recognizeImage = async (uri: string) => {
+    setPhotoUri(uri);
+    setRecognizing(true);
+    try {
+      const data = await api.recognizeScenic(uri);
+      setResult(data);
+    } catch (e: any) {
+      setError('识别失败：' + (e?.message || '未知错误'));
+    }
+    setRecognizing(false);
+  };
+
   const takePhoto = async () => {
     setError('');
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -57,25 +64,33 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
     });
 
     if (res.canceled || !res.assets[0]) return;
-
-    const uri = res.assets[0].uri;
-    setPhotoUri(uri);
-    setRecognizing(true);
-
-    try {
-      const data = await api.recognizeScenic(uri);
-      setResult(data);
-    } catch (e: any) {
-      setError('识别失败：' + (e?.message || '未知错误'));
-    }
-    setRecognizing(false);
+    recognizeImage(res.assets[0].uri);
   };
 
-  const askAI = () => {
-    onSpotRecognized({
-      name: result!.spot_name, lat: result!.lat ?? 0, lng: result!.lng ?? 0,
-      desc: result!.description, category: result!.category,
+  const pickFromAlbum = async () => {
+    setError('');
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setError('需要相册权限才能选择图片');
+      return;
+    }
+
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      base64: false,
     });
+
+    if (res.canceled || !res.assets[0]) return;
+    recognizeImage(res.assets[0].uri);
+  };
+
+  // 真景区判断：Top-1 足够高 且 与 Top-2 有明显差距（避免各类均分）
+  const isRealScenic = (r: RecognizeResult) =>
+    r.confidence >= 0.50 && (r.top5.length < 2 || r.confidence - r.top5[1].confidence >= 0.15);
+
+  const askAI = () => {
+    onSpotRecognized({ name: result!.name, lat: 0, lng: 0, desc: '', category: '' });
     handleClose();
   };
 
@@ -99,7 +114,7 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
               <View style={styles.placeholderRing}>
                 <Text style={styles.placeholderIcon}>📷</Text>
               </View>
-              <Text style={styles.placeholderText}>拍摄景点照片{'\n'}自动识别景区位置</Text>
+              <Text style={styles.placeholderText}>拍摄或选择景点照片{'\n'}自动识别景区位置</Text>
             </View>
           )}
 
@@ -116,54 +131,59 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
             </View>
           ) : null}
 
-          {/* Non-scenic result */}
-          {result && !recognizing && !result.is_scenic && (
-            <View style={styles.nonScenicCard}>
-              <View style={styles.nonScenicHeader}>
-                <Text style={styles.nonScenicIcon}>🤔</Text>
-                <Text style={styles.nonScenicTitle}>这好像不是景区相关内容</Text>
-              </View>
-              {result.ai_description ? (
-                <Text style={styles.nonScenicDesc}>
-                  照片内容识别：{result.ai_description}
-                </Text>
-              ) : (
-                <Text style={styles.nonScenicDesc}>
-                  AI未能识别出照片中的内容，请尝试拍摄更清晰的照片。
-                </Text>
-              )}
-              <Text style={styles.nonScenicHint}>
-                请拍摄景区内的寺庙、佛像、古建筑、自然风光等景点照片
+          {/* Low confidence result */}
+          {result && !recognizing && !isRealScenic(result) && (
+            <View style={styles.lowConfCard}>
+              <Text style={styles.lowConfIcon}>🔍</Text>
+              <Text style={styles.lowConfTitle}>未能识别出景区内容</Text>
+              <Text style={styles.lowConfDesc}>
+                请尝试拍摄景区内的寺庙、佛像、建筑或自然景观等清晰照片
               </Text>
+              <TouchableOpacity style={styles.retryCaptureBtn} onPress={resetState}>
+                <Text style={styles.retryCaptureBtnText}>重新拍照</Text>
+              </TouchableOpacity>
             </View>
           )}
 
-          {/* Scenic spot result */}
-          {result && !recognizing && result.is_scenic && (
+          {/* Recognition result */}
+          {result && !recognizing && isRealScenic(result) && (
             <View style={styles.resultCard}>
               <View style={styles.resultHeader}>
-                <Text style={styles.resultName}>{result.spot_name}</Text>
+                <Text style={styles.resultIcon}>🏛️</Text>
+                <Text style={styles.resultName}>{result.name}</Text>
                 <View style={styles.confidenceBadge}>
                   <Text style={styles.confidenceText}>
                     匹配度 {Math.round(result.confidence * 100)}%
                   </Text>
                 </View>
               </View>
-              {result.category && (
-                <View style={styles.resultCategoryRow}>
-                  <View style={styles.categoryChip}>
-                    <Text style={styles.categoryChipText}>{result.category}</Text>
+
+              <Text style={styles.top5Title}>Top-5 识别结果</Text>
+              {result.top5.map((item, i) => (
+                <View
+                  key={item.name}
+                  style={[styles.top5Row, i === 0 && styles.top5RowFirst]}
+                >
+                  <Text style={[styles.top5Rank, i === 0 && styles.top5RankFirst]}>
+                    #{i + 1}
+                  </Text>
+                  <Text style={[styles.top5Name, i === 0 && styles.top5NameFirst]}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.top5Conf}>{Math.round(item.confidence * 100)}%</Text>
+                  <View style={styles.top5Bar}>
+                    <View
+                      style={[
+                        styles.top5BarFill,
+                        { width: `${Math.round(item.confidence * 100)}%` },
+                      ]}
+                    />
                   </View>
                 </View>
-              )}
-              {result.description && (
-                <Text style={styles.resultDesc}>{result.description}</Text>
-              )}
-              {result.ai_description && (
-                <Text style={styles.aiDesc}>AI分析：{result.ai_description}</Text>
-              )}
+              ))}
+
               <TouchableOpacity style={styles.locateBtn} onPress={askAI}>
-                <Text style={styles.locateBtnText}>🤖 AI 讲解</Text>
+                <Text style={styles.locateBtnText}>🤖 让 AI 讲解 {result.name}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -173,7 +193,10 @@ export default function RecognizeModal({ visible, onClose, onSpotRecognized }: P
         {!recognizing && (
           <View style={styles.bottomBar}>
             <TouchableOpacity style={styles.captureBtn} onPress={takePhoto}>
-              <Text style={styles.captureBtnText}>📸 拍照识别</Text>
+              <Text style={styles.captureBtnText}>📸 拍照</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.galleryBtn} onPress={pickFromAlbum}>
+              <Text style={styles.galleryBtnText}>🖼️ 相册</Text>
             </TouchableOpacity>
             {photoUri && !result && (
               <TouchableOpacity style={styles.retryBtn} onPress={resetState}>
@@ -239,6 +262,35 @@ const styles = StyleSheet.create({
   },
   errorText: { color: Colors.vermilion, fontSize: 13 },
 
+  // Top-5
+  top5Title: {
+    fontSize: 13, fontWeight: '600', color: Colors.textSecondary,
+    marginTop: Spacing.lg, marginBottom: Spacing.sm,
+  },
+  top5Row: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 6, paddingRight: 4,
+  },
+  top5RowFirst: { paddingVertical: 8 },
+  top5Rank: {
+    width: 28, fontSize: 12, fontWeight: '600', color: Colors.textSecondary,
+  },
+  top5RankFirst: { color: Colors.goldDark, fontSize: 14 },
+  top5Name: {
+    flex: 1, fontSize: 13, color: Colors.text,
+  },
+  top5NameFirst: { fontWeight: '700', fontSize: 14, color: Colors.ink },
+  top5Conf: {
+    width: 42, fontSize: 12, fontWeight: '600', color: Colors.goldDark, textAlign: 'right',
+  },
+  top5Bar: {
+    position: 'absolute', bottom: 0, left: 30, right: 44,
+    height: 2, backgroundColor: Colors.surface, borderRadius: 1,
+  },
+  top5BarFill: {
+    height: 2, backgroundColor: Colors.goldLight, borderRadius: 1,
+  },
+
   // Non-scenic
   nonScenicCard: {
     marginTop: Spacing.lg, width: '100%',
@@ -252,6 +304,22 @@ const styles = StyleSheet.create({
   nonScenicDesc: { color: Colors.textSecondary, fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: Spacing.md },
   nonScenicHint: { color: Colors.goldDark, fontSize: 12, textAlign: 'center', lineHeight: 18 },
 
+  // Low confidence
+  lowConfCard: {
+    marginTop: Spacing.lg, width: '100%',
+    backgroundColor: Colors.white, borderRadius: BorderRadius.lg,
+    padding: Spacing.xl, borderWidth: 1, borderColor: Colors.divider,
+    alignItems: 'center', ...Shadows.md,
+  },
+  lowConfIcon: { fontSize: 40, marginBottom: Spacing.md },
+  lowConfTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink, marginBottom: Spacing.sm },
+  lowConfDesc: { color: Colors.textSecondary, fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: Spacing.lg },
+  retryCaptureBtn: {
+    backgroundColor: Colors.goldDark, borderRadius: BorderRadius.md,
+    paddingHorizontal: 32, paddingVertical: 10,
+  },
+  retryCaptureBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+
   // Scenic result
   resultCard: {
     marginTop: Spacing.lg, width: '100%',
@@ -259,9 +327,11 @@ const styles = StyleSheet.create({
     padding: Spacing.xl, ...Shadows.md,
   },
   resultHeader: {
-    flexDirection: 'row', justifyContent: 'space-between',
+    flexDirection: 'row', justifyContent: 'flex-start',
     alignItems: 'center', marginBottom: Spacing.sm,
+    gap: 8,
   },
+  resultIcon: { fontSize: 28 },
   resultName: { fontSize: 18, fontWeight: '700', color: Colors.ink, flex: 1 },
   confidenceBadge: {
     backgroundColor: Colors.jadeLight, paddingHorizontal: 10, paddingVertical: 4,
@@ -295,6 +365,12 @@ const styles = StyleSheet.create({
     paddingVertical: 14, alignItems: 'center',
   },
   captureBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  galleryBtn: {
+    flex: 1, backgroundColor: Colors.white, borderRadius: BorderRadius.md,
+    paddingVertical: 14, alignItems: 'center',
+    borderWidth: 1, borderColor: Colors.goldLight,
+  },
+  galleryBtnText: { color: Colors.goldDark, fontSize: 16, fontWeight: '600' },
   retryBtn: {
     paddingHorizontal: Spacing.xl, borderRadius: BorderRadius.md,
     paddingVertical: 14, backgroundColor: Colors.surface,

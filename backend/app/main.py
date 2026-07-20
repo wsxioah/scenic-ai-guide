@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import settings
 from app.models.database import engine, Base, get_db
 from app.models.entities import DigitalHumanConfig, FAQ
-from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi, recommend
+from app.api import chat, voice, scenic, knowledge, auth, admin, digital_human, poi, recommend, recognition
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,6 +94,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["管理后台"])
 app.include_router(digital_human.router, tags=["数字人"])
 app.include_router(poi.router, prefix="/api/poi", tags=["POI"])
 app.include_router(recommend.router, prefix="/api/recommend", tags=["推荐"])
+app.include_router(recognition.router, prefix="/api/recognition", tags=["景物识别"])
 
 
 # Static files

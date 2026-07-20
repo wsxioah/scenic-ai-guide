@@ -8,6 +8,7 @@ class ApiClient {
   private baseUrl: string;
   private userId: number | null = null;
   private token: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
@@ -19,6 +20,10 @@ class ApiClient {
 
   setToken(token: string | null) {
     this.token = token;
+  }
+
+  setUnauthorizedHandler(handler: (() => void) | null) {
+    this.onUnauthorized = handler;
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -36,8 +41,18 @@ class ApiClient {
 
     const doFetch = async (signal: AbortSignal) => {
       const response = await fetch(url, { ...options, headers, signal });
+      if (response.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const body = await response.json().catch(() => ({}));
+        let msg: string;
+        if (Array.isArray(body.detail)) {
+          msg = body.detail.map((e: any) => e.msg).join('; ');
+        } else {
+          msg = body.detail || `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(msg);
       }
       return response.json();
     };
@@ -66,10 +81,25 @@ class ApiClient {
   }
 
   // Auth
-  async login(phone: string, code: string = '0000') {
+  async login(account: string, code: string = '0000', password: string = '') {
+    const body: Record<string, string> = { account };
+    if (password) {
+      body.password = password;
+    } else {
+      body.code = code;
+    }
     const result = await this.request<{ id: number; phone: string; nickname: string; token: string }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ phone, code }),
+      body: JSON.stringify(body),
+    });
+    this.token = result.token;
+    return result;
+  }
+
+  async register(account: string, password: string, nickname: string) {
+    const result = await this.request<{ id: number; phone: string; nickname: string; token: string }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ account, password, nickname }),
     });
     this.token = result.token;
     return result;
@@ -127,32 +157,31 @@ class ApiClient {
   // Knowledge search
   // Scenic spot recognition from image
   async recognizeScenic(imageUri: string): Promise<{
-    is_scenic: boolean;
-    spot_name: string;
+    name: string;
     confidence: number;
-    category?: string;
-    description?: string;
-    ai_description?: string;
-    lat?: number;
-    lng?: number;
+    top5: { name: string; confidence: number }[];
   }> {
-    const url = `${this.baseUrl}/api/scenic/recognize`;
+    const url = `${this.baseUrl}/api/recognition/identify`;
     const base64 = await readAsStringAsync(imageUri, {
       encoding: EncodingType.Base64,
     });
 
-    const formData = new FormData();
-    formData.append('image', base64);
-
     const response = await fetch(url, {
       method: 'POST',
-      body: formData,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64 }),
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || `识别失败 (${response.status})`);
     }
-    return response.json();
+    const data = await response.json();
+    return {
+      name: data.top_match,
+      confidence: data.top_confidence,
+      top5: data.results,
+    };
   }
 
   // ========== Recommendations & Tracking ==========
@@ -178,6 +207,15 @@ class ApiClient {
     let url = '/api/faq';
     if (category) url += `?category=${category}`;
     return this.request<any[]>(url);
+  }
+
+  // User stats
+  async getUserStats() {
+    return this.request<{ favorites: number; conversations: number; messages: number; visited_spots: number }>('/api/auth/stats');
+  }
+
+  getUserFavorites() {
+    return this.request<any[]>('/api/recommend/track/favorites');
   }
 
   getBaseUrl() {

@@ -8,88 +8,17 @@
 html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e}
 #map{width:100%;height:100%}
 #debug{position:absolute;bottom:8px;left:8px;color:#0f0;background:rgba(0,0,0,0.75);padding:4px 8px;border-radius:4px;font-family:monospace;font-size:10px;z-index:999;pointer-events:none}
-#collect{position:absolute;top:260px;right:4px;max-height:55%;width:120px;background:rgba(0,0,0,0.85);color:#0f0;padding:6px 8px;border-radius:6px;font-family:monospace;font-size:9px;z-index:999;overflow-y:auto;display:none;user-select:text;-webkit-user-select:text}
-#collect-btn{position:absolute;top:210px;right:4px;color:#fff;background:#2563EB;padding:8px 0;border-radius:6px;font-family:sans-serif;font-size:12px;z-index:999;border:none;font-weight:600;width:120px}
-#search-box{position:absolute;top:130px;right:4px;z-index:999;display:flex;flex-direction:column;gap:4px}
-#search-input{width:120px;padding:6px 8px;border-radius:6px;border:1px solid #555;background:rgba(0,0,0,0.8);color:#fff;font-size:11px;outline:none}
-#search-btn{width:120px;background:#2563EB;color:#fff;border:none;border-radius:6px;padding:5px 0;font-size:12px;font-weight:600}
-#copy-btn{display:block;margin-top:4px;width:100%;background:#10B981;color:#fff;border:none;border-radius:4px;padding:3px 0;font-size:9px;cursor:pointer}
 </style>
 </head>
 <body>
 <div id="map" style="color:#9ca3af;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">地图加载中...</div>
-<div id="debug"></div>
-<div id="search-box">
-  <input id="search-input" placeholder="搜索景点..." onkeydown="if(event.key==='Enter')doSearch()">
-  <button id="search-btn" onclick="doSearch()">搜</button>
-</div>
-<button id="collect-btn" onclick="toggleCollect()" style="display:none">● 开始采集</button>
-<div id="collect"></div>
+<div id="debug" style="display:none"></div>
 <script>
 window.onerror=function(m,s,l,c,e){try{window.ReactNativeWebView.postMessage(JSON.stringify({type:"error",message:String(m),line:l}))}catch(e2){}};
 
-var _map=null,_userMarker=null,_collecting=false,_pts=[];
+var _map=null,_userMarker=null,_manualLocMode=false;
 
 function log(msg){try{document.getElementById("debug").innerHTML=msg}catch(e){}}
-
-function toggleCollect(){
-  _collecting=!_collecting;
-  var b=document.getElementById("collect-btn");
-  var c=document.getElementById("collect");
-  if(_collecting){
-    b.innerHTML="■ 停止采集";
-    b.style.background="#EF4444";
-    c.style.display="block";
-    _pts=[];
-    c.innerHTML="<b>采集模式</b><br>点击景点标记";
-  }else{
-    b.innerHTML="● 开始采集";
-    b.style.background="#2563EB";
-  }
-}
-
-function addPt(name,lat,lng){
-  _pts.push({name:name,lat:lat,lng:lng});
-  var c=document.getElementById("collect");
-  var s="<b>已采集 "+_pts.length+" 个</b><br>";
-  _pts.forEach(function(p,i){
-    s+=(i+1)+"."+(p.name||"?")+"<br><small>"+p.lat.toFixed(6)+","+p.lng.toFixed(6)+"</small><br>";
-  });
-  s+='<button id="copy-btn" onclick="copyPts()">复制全部</button>';
-  c.innerHTML=s;
-}
-
-function copyPts(){
-  var s="";
-  _pts.forEach(function(p,i){
-    s+=(p.name||"P"+(i+1))+"\t"+p.lat.toFixed(6)+"\t"+p.lng.toFixed(6)+"\n";
-  });
-  // Copy to clipboard via textarea trick (works in WebView)
-  var ta=document.createElement("textarea");
-  ta.value=s;ta.style.position="fixed";ta.style.opacity="0";
-  document.body.appendChild(ta);ta.select();
-  try{document.execCommand("copy");log("已复制"+_pts.length+"个!")}catch(e){log("复制失败:"+e)}
-  document.body.removeChild(ta);
-  // Also post to RN so we can log it
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:"log",message:"COORDS:\n"+s}));
-}
-
-var _localSearch=null;
-function doSearch(){
-  var q=document.getElementById("search-input").value;
-  if(!q)return;
-  log("搜索:"+q);
-  if(!_localSearch)_localSearch=new BMapGL.LocalSearch(_map,{
-    onSearchComplete:function(results){
-      if(results&&results.getNumPois()>0){
-        var p=results.getPoi(0);
-        _map.centerAndZoom(p.point,18);
-        log("找到:"+p.title+" "+p.point.lat.toFixed(6)+","+p.point.lng.toFixed(6));
-      }else{log("未找到");}
-    }
-  });
-  _localSearch.search(q);
-}
 
 // WGS84 → BD09 (for scenic spot coordinates that were picked from WGS84 maps)
 function wgs84ToBd09(lng,lat){
@@ -119,8 +48,9 @@ function makeIcon(color,shape){var svg=shape==="pin"?'<svg xmlns="http://www.w3.
 function setFacilities(facilities){_facMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_facMarkers=[];if(!facilities||!facilities.length){log("fac:0");return}facilities.forEach(function(f){try{var pt=new BMapGL.Point(f.lng,f.lat);var color=FAC_COLORS[f.kind]||"#6B7280";var icon=new BMapGL.Icon(makeIcon(color,"dot"),new BMapGL.Size(22,22),{anchor:new BMapGL.Size(11,11),imageSize:new BMapGL.Size(22,22)});var marker=new BMapGL.Marker(pt,{icon:icon});marker._fac=f;marker.addEventListener("click",function(){try{var w=new BMapGL.InfoWindow('<div style="font-family:sans-serif;padding:2px 4px;font-size:12px"><b>'+this._fac.name+"</b></div>",{width:140,height:36});_map.openInfoWindow(w,this.getPosition())}catch(e){}});_map.addOverlay(marker);_facMarkers.push(marker)}catch(e){}});log("fac:"+facilities.length)}
 function setSpots(spots){_spotMarkers.forEach(function(m){try{_map.removeOverlay(m)}catch(e){}});_spotMarkers=[];if(!spots||!spots.length)return;spots.forEach(function(s){try{var pt=new BMapGL.Point(s.lng,s.lat);var icon=new BMapGL.Icon(makeIcon("#a855f7","pin"),new BMapGL.Size(28,42),{anchor:new BMapGL.Size(14,42),imageSize:new BMapGL.Size(28,42)});var marker=new BMapGL.Marker(pt,{icon:icon});marker._spot=s;_map.addOverlay(marker);_spotMarkers.push(marker);var label=new BMapGL.Label(s.name,{position:pt,offset:new BMapGL.Size(-16,-40)});label.setStyle({color:"#fff",background:"rgba(0,0,0,0.75)",border:"none",borderRadius:"3px",padding:"1px 5px",fontSize:"10px",whiteSpace:"nowrap"});_map.addOverlay(label);_spotMarkers.push(label);marker.addEventListener("click",function(){try{window.ReactNativeWebView.postMessage(JSON.stringify({type:"navigate",lat:this._spot.lat,lng:this._spot.lng,name:this._spot.name}))}catch(e){}})}catch(e){}})}
 
-// Stored scenic coords are already BD09 (picked from Baidu Maps)
-var CENTER_BD09 = [120.106595, 31.431031]; // 九龙灌浴（实采坐标）
+// All scenic/facility coords are BD09 (collected from Baidu Maps app).
+// Only RN GPS coordinates are WGS84 and need wgs84ToBd09 conversion.
+var CENTER_BD09 = [120.106595, 31.431031]; // 九龙灌浴（实采BD09坐标）
 
 function initMap(){
   try{
@@ -136,16 +66,20 @@ function initMap(){
     var cMk=new BMapGL.Marker(cpt,{icon:cIcon});
     _map.addOverlay(cMk);
 
-    // Tap handler — in collect mode, each tap records a point
+    // Tap handler — in collect mode, each tap records a point; in manualLoc mode, sets user position
     _map.addEventListener("click",function(e){
       var lat=e.latlng.lat,lng=e.latlng.lng;
-      if(_collecting){
-        addPt("P"+(_pts.length+1),lat,lng);
+      if(_manualLocMode){
+        // Map click coordinates are BD09, so pass source="baidu"
+        setUserLocation(lat,lng,"baidu");
+        _manualLocMode=false;
+        document.getElementById("map").style.cursor="";
+        log("手动定位:"+lat.toFixed(6)+","+lng.toFixed(6));
+        return;
       }
       log("TAP:"+lat.toFixed(6)+","+lng.toFixed(6));
     });
 
-    document.getElementById("collect-btn").style.display="block";
     log("mapReady:"+CENTER_BD09[1]+","+CENTER_BD09[0]);
     window.ReactNativeWebView.postMessage(JSON.stringify({type:"mapReady"}));
   }catch(e){
@@ -159,8 +93,7 @@ function setRoutePath(path){
   if(!path||!path.length)return;
   try{
     var pts=path.map(function(p){
-      var bd=wgs84ToBd09(p.lng,p.lat);
-      return new BMapGL.Point(bd[0],bd[1]);
+      return new BMapGL.Point(p.lng,p.lat);
     });
     _routeLine=new BMapGL.Polyline(pts,{
       strokeColor:"#3B82F6",strokeWeight:4,strokeOpacity:0.8,
@@ -171,17 +104,73 @@ function setRoutePath(path){
     log("route:"+path.length+"pts");
   }catch(e){log("routeErr:"+e)}
 }
-function setUserLocation(lat,lng){
+function setUserLocation(lat,lng,source){
+  source=source||"rn";
   if(_userMarker){try{_map.removeOverlay(_userMarker)}catch(e){}}
   try{
-    var bd=wgs84ToBd09(lng,lat);
+    var bd;
+    if(source==="baidu"){
+      // Baidu Geolocation returns BD09 already
+      bd=[lng,lat];
+    }else{
+      // RN GPS returns WGS84, must convert
+      bd=wgs84ToBd09(lng,lat);
+    }
     var pt=new BMapGL.Point(bd[0],bd[1]);
     var icon=new BMapGL.Icon(makeUserIcon(),new BMapGL.Size(24,24),{anchor:new BMapGL.Size(12,12),imageSize:new BMapGL.Size(24,24)});
     _userMarker=new BMapGL.Marker(pt,{icon:icon});
     _map.addOverlay(_userMarker);
     _userBd09=[bd[0],bd[1]];
-    log("GPS:"+lat.toFixed(5)+","+lng.toFixed(5));
+    log("GPS("+source+"):"+lat.toFixed(5)+","+lng.toFixed(5));
+    // Only report back to RN for native geo (Baidu GPS / manual tap) — avoid feedback loop
+    if(source==="baidu"){
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:"userLocation",lat:lat,lng:lng,source:source}));
+    }
   }catch(e){log("GPSerr:"+e)}
+}
+
+// ---- Baidu Maps built-in geolocation (works on Chinese phones without Google Play) ----
+var _baiduGeo=null,_geoWatchId=null;
+function startBaiduGeolocation(){
+  try{
+    if(!_map)return;
+    _baiduGeo=new BMapGL.Geolocation();
+    // First try a one-shot location
+    _baiduGeo.getCurrentPosition(function(result){
+      if(this.getStatus()===window.BMAP_STATUS_SUCCESS){
+        var lat=result.point.lat,lng=result.point.lng;
+        log("BaiduGeo:"+lat.toFixed(5)+","+lng.toFixed(5));
+        // Baidu Geolocation returns BD09, so pass source="baidu"
+        setUserLocation(lat,lng,"baidu");
+      }else{
+        log("BaiduGeo:fail("+this.getStatus()+")");
+      }
+    },{enableHighAccuracy:true});
+  }catch(e){
+    log("BaiduGeo:err:"+e);
+  }
+}
+
+// Continuous watch via Baidu geolocation (fires every ~15s to conserve API quota)
+function startBaiduGeoWatch(){
+  try{
+    if(!_map||_geoWatchId)return;
+    _baiduGeo=new BMapGL.Geolocation();
+    _geoWatchId=setInterval(function(){
+      try{
+        _baiduGeo.getCurrentPosition(function(result){
+          if(this.getStatus()===window.BMAP_STATUS_SUCCESS){
+            var lat=result.point.lat,lng=result.point.lng;
+            setUserLocation(lat,lng,"baidu");
+          }
+        },{enableHighAccuracy:true,timeout:8000});
+      }catch(e){}
+    },15000);
+  }catch(e){}
+}
+
+function stopBaiduGeoWatch(){
+  if(_geoWatchId){clearInterval(_geoWatchId);_geoWatchId=null;}
 }
 
 function findWalkingRoute(toLat,toLng,fromLat,fromLng){
@@ -227,13 +216,31 @@ function centerOnUser(){
 function _onMapMsg(e){
   try{
     var d=JSON.parse(e.data);
-    if(d.type==="setUserLocation") setUserLocation(d.lat,d.lng);
-    else if(d.type==="centerOn") centerOn(d.lat,d.lng,d.zoom);
+    if(d.type==="setUserLocation") setUserLocation(d.lat,d.lng,d.source||"rn");
+    else if(d.type==="centerOn"){
+
+      // RN coords from collected data are already BD09
+      centerOn(d.lat,d.lng,d.zoom);
+    }
     else if(d.type==="centerOnUser") centerOnUser();
     else if(d.type==="setFacilities") setFacilities(d.facilities);
     else if(d.type==="setSpots") setSpots(d.spots);
     else if(d.type==="setRoutePath") setRoutePath(d.path);
-    else if(d.type==="findWalkingRoute") findWalkingRoute(d.lat,d.lng,d.fromLat,d.fromLng);
+    else if(d.type==="findWalkingRoute"){
+      // RN coords from collected data are already BD09 — no conversion needed
+      var toBd=[d.lng, d.lat]; // RN coords already BD09
+      var flng=null,flat=null;
+      if(d.fromLat!=null&&d.fromLng!=null){
+        var fBd=[d.fromLng, d.fromLat]; // already BD09
+        flng=fBd[0]; flat=fBd[1];
+      }
+      findWalkingRoute(toBd[1],toBd[0],flat,flng);
+    }
+    else if(d.type==="startManualLoc"){_manualLocMode=true;document.getElementById("map").style.cursor="crosshair";log("点击地图设置你的位置");}
+    else if(d.type==="stopManualLoc"){_manualLocMode=false;document.getElementById("map").style.cursor="";}
+    else if(d.type==="startBaiduGeoWatch") startBaiduGeoWatch();
+    else if(d.type==="stopBaiduGeoWatch") stopBaiduGeoWatch();
+    else if(d.type==="retryBaiduGeo") startBaiduGeolocation();
   }catch(ex){}
 }
 document.addEventListener("message",_onMapMsg);
@@ -247,7 +254,7 @@ var _poll=setInterval(function(){
   if(typeof BMapGL!=="undefined"){
     if(_done)return;_done=true;clearInterval(_poll);
     _el.innerHTML='<div style="color:#22c55e;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">SDK OK</div>';
-    setTimeout(initMap,10);
+    setTimeout(function(){initMap();startBaiduGeolocation();},10);
   }else if(_n%20===0){
     _el.innerHTML='<div style="color:#f59e0b;text-align:center;padding-top:60%;font-family:sans-serif;font-size:14px">SDK '+Math.round((Date.now()-_t0)/1000)+'s</div>';
   }

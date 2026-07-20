@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, FlatList, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, Alert, StatusBar,
+  StyleSheet, KeyboardAvoidingView, Platform, Alert, StatusBar, Modal,
 } from 'react-native';
 import { useAudioPlayer } from 'expo-audio';
 import { useNavigation } from '@react-navigation/native';
@@ -19,13 +19,22 @@ type VoiceState = 'idle' | 'listening' | 'processing' | 'cancelling';
 
 const API_BASE = SERVER_URL;
 
-const VOICE_BY_GENDER = { female: 'zh-CN-XiaoxiaoNeural', male: 'zh-CN-YunxiNeural' } as const;
+const VOICE_OPTIONS = [
+  { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓', desc: '温柔女声', gender: 'female' as const },
+  { id: 'zh-CN-XiaoyiNeural',  name: '晓伊', desc: '活泼女声', gender: 'female' as const },
+  { id: 'zh-CN-YunxiaNeural',  name: '云霞', desc: '亲切女声', gender: 'female' as const },
+  { id: 'zh-CN-YunxiNeural',   name: '云希', desc: '标准男声', gender: 'male' as const },
+  { id: 'zh-CN-YunyangNeural', name: '云扬', desc: '播音男声', gender: 'male' as const },
+];
+const DEFAULT_VOICE_BY_GENDER = { female: 'zh-CN-XiaoxiaoNeural', male: 'zh-CN-YunxiNeural' } as const;
 
 export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [recognizeVisible, setRecognizeVisible] = useState(false);
   const [avatarGender, setAvatarGender] = useState<'female' | 'male'>('female');
+  const [selectedVoice, setSelectedVoice] = useState<string>(DEFAULT_VOICE_BY_GENDER.female);
+  const [showVoicePicker, setShowVoicePicker] = useState(false);
   const [recommendChips, setRecommendChips] = useState<any[]>([]);
   const flatListRef = useRef<FlatList>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -40,14 +49,13 @@ export default function ChatScreen() {
   const audioPlayer = useAudioPlayer();
   const audioQueueRef = useRef<string[]>([]);
   const audioPlayingRef = useRef(false);
-  const readyToPlayCountRef = useRef(0);
 
   const playNextInQueue = useCallback(() => {
-    if (audioQueueRef.current.length === 0 || readyToPlayCountRef.current === 0) {
+    if (audioQueueRef.current.length === 0) {
       audioPlayingRef.current = false;
+      avatarSendAction('idle');
       return;
     }
-    readyToPlayCountRef.current--;
     const url = audioQueueRef.current.shift()!;
     audioPlayingRef.current = true;
     const fullUrl = url.startsWith('http') ? url : API_BASE + url;
@@ -71,13 +79,7 @@ export default function ChatScreen() {
   const navigation = useNavigation<any>();
 
   useEffect(() => {
-    if (!isLoggedIn) {
-      // Prompt user to log in before using AI guide
-      Alert.alert('欢迎使用灵山AI导览', '请先在「我的」页面登录后使用智能导览功能', [
-        { text: '去登录', onPress: () => navigation.navigate('Profile') },
-        { text: '稍后再说', style: 'cancel' },
-      ]);
-    }
+    // Login prompt is now shown inline as part of the chat UI, not an intrusive alert
   }, []);
 
   const connectWSRef = useRef<() => void>(() => {});
@@ -99,7 +101,8 @@ export default function ChatScreen() {
           case 'tts_chunk':
             if (data.audio_url) {
               audioQueueRef.current.push(data.audio_url);
-              avatarSendAction('lipSync', { audioUrl: data.audio_url });
+              avatarSendAction('lipSync');
+              if (!audioPlayingRef.current) playNextInQueue();
             }
             break;
           case 'ready': setStreaming(false); break;
@@ -142,13 +145,13 @@ export default function ChatScreen() {
 
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'query', text, voice: VOICE_BY_GENDER[avatarGender] }));
+      ws.send(JSON.stringify({ type: 'query', text, voice: selectedVoice }));
     } else {
       Alert.alert('连接中', '正在连接服务器，请稍后重试');
       setStreaming(false);
       connectWSRef.current();
     }
-  }, [inputText, isStreaming, avatarGender]);
+  }, [inputText, isStreaming, avatarGender, selectedVoice]);
 
   const handleVoiceResult = useCallback((text: string) => {
     setInputText(text);
@@ -162,14 +165,8 @@ export default function ChatScreen() {
     audioPlayer.replace({ uri: '' });
     audioQueueRef.current = [];
     audioPlayingRef.current = false;
-    readyToPlayCountRef.current = 0;
     avatarSendAction('idle');
   }, [flushStreamContent, setStreaming, audioPlayer]);
-
-  const handleLipSyncStarted = useCallback(() => {
-    readyToPlayCountRef.current++;
-    if (!audioPlayingRef.current) playNextInQueue();
-  }, [playNextInQueue]);
 
   const handleSpotRecognized = useCallback((spot: { name: string; lat: number; lng: number; desc?: string; category?: string }) => {
     const content = `[拍照识景] 识别到: ${spot.name}${spot.category ? ` (${spot.category}类景点)` : ''}。请介绍一下这个景点。`;
@@ -178,13 +175,13 @@ export default function ChatScreen() {
     setStreaming(true);
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'query', text: content, voice: VOICE_BY_GENDER[avatarGender] }));
+      ws.send(JSON.stringify({ type: 'query', text: content, voice: selectedVoice }));
     } else {
       Alert.alert('连接中', '正在连接服务器...');
       setStreaming(false);
       connectWSRef.current();
     }
-  }, [addMessage, setStreaming, avatarGender]);
+  }, [addMessage, setStreaming, avatarGender, selectedVoice]);
 
   useEffect(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 100);
@@ -203,7 +200,7 @@ export default function ChatScreen() {
     <>
       {/* Avatar */}
       <View style={styles.avatarContainer}>
-        <AvatarWebView style={styles.avatarWebView} modelId={avatarGender} onLipSyncStarted={handleLipSyncStarted} />
+        <AvatarWebView style={styles.avatarWebView} modelId={avatarGender} />
       </View>
 
       <FlatList
@@ -285,6 +282,15 @@ export default function ChatScreen() {
         </View>
       )}
 
+      {/* Login prompt for unauthenticated users */}
+      {!isLoggedIn && (
+        <TouchableOpacity style={styles.loginPromptBar} onPress={() => navigation.navigate('Profile')}>
+          <View style={styles.loginPromptDot} />
+          <Text style={styles.loginPromptText}>登录后使用 AI 导览和语音对话</Text>
+          <Ionicons name="chevron-forward" size={14} color={Colors.goldDark} />
+        </TouchableOpacity>
+      )}
+
       {/* Input area */}
       <View style={styles.inputArea}>
         <View style={styles.inputRow}>
@@ -340,17 +346,20 @@ export default function ChatScreen() {
           <View style={styles.genderToggle}>
             <TouchableOpacity
               style={[styles.genderBtn, avatarGender === 'female' && styles.genderBtnActive]}
-              onPress={() => setAvatarGender('female')}
+              onPress={() => { setAvatarGender('female'); setSelectedVoice(DEFAULT_VOICE_BY_GENDER.female); }}
             >
               <Text style={[styles.genderBtnText, avatarGender === 'female' && styles.genderBtnTextActive]}>女</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.genderBtn, avatarGender === 'male' && styles.genderBtnActive]}
-              onPress={() => setAvatarGender('male')}
+              onPress={() => { setAvatarGender('male'); setSelectedVoice(DEFAULT_VOICE_BY_GENDER.male); }}
             >
               <Text style={[styles.genderBtnText, avatarGender === 'male' && styles.genderBtnTextActive]}>男</Text>
             </TouchableOpacity>
           </View>
+          <TouchableOpacity style={styles.voiceBtn} onPress={() => setShowVoicePicker(true)}>
+            <Ionicons name="volume-high" size={16} color={Colors.goldDark} />
+          </TouchableOpacity>
           {SHOW_PHOTO_RECOGNITION && (
             <TouchableOpacity onPress={() => setRecognizeVisible(true)} style={styles.headerBtn}>
               <Ionicons name="camera" size={17} color={Colors.goldDark} />
@@ -370,6 +379,39 @@ export default function ChatScreen() {
           handleSpotRecognized(spot);
         }}
       />
+
+      {/* Voice picker modal */}
+      <Modal visible={showVoicePicker} transparent animationType="fade" onRequestClose={() => setShowVoicePicker(false)}>
+        <TouchableOpacity style={styles.voiceOverlay} activeOpacity={1} onPress={() => setShowVoicePicker(false)}>
+          <View style={styles.voiceSheet}>
+            <Text style={styles.voiceSheetTitle}>选择声音</Text>
+            {VOICE_OPTIONS.map(v => (
+              <TouchableOpacity
+                key={v.id}
+                style={[styles.voiceOption, selectedVoice === v.id && styles.voiceOptionActive]}
+                onPress={() => { setSelectedVoice(v.id); setShowVoicePicker(false); }}
+              >
+                <View style={styles.voiceOptionLeft}>
+                  <Ionicons
+                    name={v.gender === 'female' ? 'woman' : 'man'}
+                    size={18}
+                    color={selectedVoice === v.id ? Colors.goldDark : Colors.textSecondary}
+                  />
+                  <View>
+                    <Text style={[styles.voiceOptionName, selectedVoice === v.id && styles.voiceOptionNameActive]}>
+                      {v.name}
+                    </Text>
+                    <Text style={styles.voiceOptionDesc}>{v.desc}</Text>
+                  </View>
+                </View>
+                {selectedVoice === v.id && (
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.goldDark} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {Platform.OS === 'ios' ? (
         <KeyboardAvoidingView style={styles.body} behavior="padding" keyboardVerticalOffset={90}>
@@ -406,11 +448,51 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.goldSurface,
     alignItems: 'center', justifyContent: 'center',
   },
+  voiceBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: Colors.goldSurface,
+    alignItems: 'center', justifyContent: 'center',
+  },
   newChatBtn: {
     paddingHorizontal: 14, paddingVertical: 7,
     borderRadius: BorderRadius.full, backgroundColor: Colors.goldSurface,
   },
   newChatText: { fontSize: 12, color: Colors.goldDark, fontWeight: '600' },
+  // Voice picker
+  voiceOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  voiceSheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: Spacing.lg, paddingTop: 20, paddingBottom: 40,
+  },
+  voiceSheetTitle: {
+    fontSize: 17, fontWeight: '700', color: Colors.ink,
+    textAlign: 'center', marginBottom: 16,
+  },
+  voiceOption: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 14, paddingHorizontal: 16,
+    borderRadius: 12, marginBottom: 4,
+  },
+  voiceOptionActive: {
+    backgroundColor: Colors.goldSurface,
+    borderWidth: 1, borderColor: Colors.goldLight,
+  },
+  voiceOptionLeft: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  voiceOptionName: {
+    fontSize: 15, fontWeight: '600', color: Colors.text,
+  },
+  voiceOptionNameActive: {
+    color: Colors.goldDark,
+  },
+  voiceOptionDesc: {
+    fontSize: 12, color: Colors.textSecondary, marginTop: 2,
+  },
   genderToggle: {
     flexDirection: 'row', backgroundColor: Colors.goldSurface,
     borderRadius: BorderRadius.full, padding: 2,
@@ -498,6 +580,22 @@ const styles = StyleSheet.create({
   dot1: { opacity: 0.4 }, dot2: { opacity: 0.7 }, dot3: { opacity: 1 },
 
   // Recommend chips
+  // Login prompt
+  loginPromptBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, marginHorizontal: Spacing.lg,
+    backgroundColor: Colors.goldSurface,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1, borderColor: Colors.goldLight,
+  },
+  loginPromptDot: {
+    width: 8, height: 8, borderRadius: 4,
+    backgroundColor: Colors.goldDark, marginRight: 8,
+  },
+  loginPromptText: {
+    flex: 1, fontSize: 13, fontWeight: '600', color: Colors.goldDark,
+  },
+
   recommendRow: {
     paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm,
     backgroundColor: Colors.white,

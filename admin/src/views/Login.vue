@@ -4,22 +4,39 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 
 const router = useRouter()
-const phone = ref('')
+const account = ref('')
+const password = ref('')
 const code = ref('')
+const loginMode = ref<'password' | 'code'>('password')
 const loading = ref(false)
 const error = ref('')
 
 async function handleLogin() {
-  if (!phone.value || !code.value) {
-    error.value = '请输入手机号和验证码'
+  if (!account.value) {
+    error.value = '请输入账号'
+    return
+  }
+  if (loginMode.value === 'password' && !password.value) {
+    error.value = '请输入密码'
+    return
+  }
+  if (loginMode.value === 'code' && !code.value) {
+    error.value = '请输入验证码'
     return
   }
   loading.value = true
   error.value = ''
   try {
-    const { data } = await axios.post('/api/auth/login', { phone: phone.value, code: code.value })
+    const body: Record<string, string> = { account: account.value }
+    if (loginMode.value === 'password') {
+      body.password = password.value
+    } else {
+      body.code = code.value || '0000'
+    }
+    const { data } = await axios.post('/api/auth/login', body)
     localStorage.setItem('admin_token', data.token)
-    localStorage.setItem('admin_user', JSON.stringify(data.user || { phone: phone.value }))
+    localStorage.setItem('admin_user', JSON.stringify({ id: data.id, phone: data.phone, nickname: data.nickname }))
+    axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
     router.replace('/dashboard')
   } catch (e) {
     error.value = e.response?.data?.detail || '登录失败，请稍后重试'
@@ -37,12 +54,22 @@ async function handleLogin() {
         <p class="brand-sub">AI 数字人导览 · 管理后台</p>
       </div>
       <a-form layout="vertical" @submit.prevent="handleLogin">
-        <a-form-item label="手机号">
-          <a-input v-model:value="phone" size="large" placeholder="请输入手机号" />
+        <a-form-item label="账号">
+          <a-input v-model:value="account" size="large" placeholder="请输入账号" />
         </a-form-item>
-        <a-form-item label="验证码">
-          <a-input v-model:value="code" size="large" placeholder="请输入验证码" />
-        </a-form-item>
+
+        <template v-if="loginMode === 'password'">
+          <a-form-item label="密码">
+            <a-input-password v-model:value="password" size="large" placeholder="请输入密码" />
+          </a-form-item>
+        </template>
+
+        <template v-else>
+          <a-form-item label="验证码">
+            <a-input v-model:value="code" size="large" placeholder="请输入验证码（开发模式: 0000）" />
+          </a-form-item>
+        </template>
+
         <a-form-item v-if="error">
           <a-alert :message="error" type="error" show-icon />
         </a-form-item>
@@ -52,6 +79,11 @@ async function handleLogin() {
           </a-button>
         </a-form-item>
       </a-form>
+      <div style="text-align: center; margin-bottom: 16px;">
+        <a-button type="link" size="small" @click="loginMode = loginMode === 'password' ? 'code' : 'password'">
+          {{ loginMode === 'password' ? '使用验证码登录' : '使用密码登录' }}
+        </a-button>
+      </div>
       <p class="foot">灵山胜境 · 智慧景区管理系统</p>
     </div>
   </div>

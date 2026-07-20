@@ -11,6 +11,7 @@ class User(Base):
     nickname: Mapped[str] = mapped_column(String(50))
     avatar: Mapped[str | None] = mapped_column(String(500))
     interests: Mapped[str | None] = mapped_column(Text)  # JSON array
+    password_hash: Mapped[str | None] = mapped_column(String(128))
     visit_history: Mapped[str | None] = mapped_column(Text)  # JSON array
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
 

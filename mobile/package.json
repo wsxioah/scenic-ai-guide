@@ -13,6 +13,7 @@
     "expo-file-system": "^56.0.7",
     "expo-image-picker": "~56.0.16",
     "expo-location": "~56.0.16",
+    "expo-secure-store": "~56.0.4",
     "expo-speech-recognition": "^56.0.1",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",

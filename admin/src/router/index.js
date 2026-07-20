@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import axios from 'axios'
 
 const routes = [
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { title: '登录' } },
@@ -19,10 +20,28 @@ const routes = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const token = localStorage.getItem('admin_token')
-  if (to.path !== '/login' && !token) return '/login'
-  if (to.path === '/login' && token) return '/dashboard'
+
+  if (to.path === '/login' && token) {
+    return '/dashboard'
+  }
+
+  if (to.path !== '/login') {
+    if (!token) {
+      return '/login'
+    }
+    // Validate token by calling profile endpoint
+    try {
+      await axios.get('/api/auth/profile', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    } catch {
+      localStorage.removeItem('admin_token')
+      localStorage.removeItem('admin_user')
+      return '/login'
+    }
+  }
 })
 
 export default router

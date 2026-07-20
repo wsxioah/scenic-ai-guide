@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import logging
 import re
 import uuid
 import os
@@ -23,7 +24,10 @@ os.makedirs(AUDIO_DIR, exist_ok=True)
 EMOTION_TAG_RE = re.compile(r'[（(][^）)]*[）)]|【[^】]*】|\*\*[^*]*\*\*|#{1,6}\s*')
 
 TTS_VOICE = "zh-CN-XiaoxiaoNeural"
-ALLOWED_VOICES = {"zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"}
+ALLOWED_VOICES = {
+    "zh-CN-XiaoxiaoNeural", "zh-CN-XiaoyiNeural", "zh-CN-YunxiaNeural",
+    "zh-CN-YunxiNeural", "zh-CN-YunyangNeural",
+}
 
 SYSTEM_PROMPT ="""你是景区AI导游"小景"。用热情口语化的中文回答，每次80-100字。用短句，少用逗号，句末用句号。禁止括号、markdown、表情。不知道就建议咨询工作人员。"""
 
@@ -36,6 +40,7 @@ def _clean_text_for_tts(text: str) -> str:
 
 
 async def _edge_tts(text: str, output_wav: str, voice: str = TTS_VOICE) -> str:
+    logging.info(f"[TTS] using voice=%s text=%s...", voice, text[:40])
     mp3_data = io.BytesIO()
     comm = edge_tts.Communicate(text, voice)
     async for chunk in comm.stream():
@@ -92,11 +97,16 @@ async def websocket_digital_human(ws: WebSocket):
 
             raw_voice = data.get("voice")
             voice = raw_voice if raw_voice in ALLOWED_VOICES else TTS_VOICE
+            logging.info(f"[Voice] requested=%s resolved=%s allowed=%s", raw_voice, voice, sorted(ALLOWED_VOICES))
 
             await send({"type": "status", "state": "thinking"})
 
             # RAG search
-            knowledge = await rag_service.search(user_text, top_k=1)
+            try:
+                knowledge = await rag_service.search(user_text, top_k=1)
+            except Exception:
+                logging.getLogger(__name__).warning("RAG search failed, falling back to base prompt", exc_info=True)
+                knowledge = []
             if knowledge:
                 ctx = "\n".join([f"- {k['title']}: {k['content'][:80]}" for k in knowledge])
                 system_prompt = SYSTEM_PROMPT + f"\n参考：{ctx}"

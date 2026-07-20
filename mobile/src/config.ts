@@ -7,4 +7,4 @@ export const WS_URL = `ws://${SERVER_HOST}:${SERVER_PORT}/ws`;
 
 // 当前 LLM(DeepSeek) 不支持图像识别，拍照识景无法工作，暂时隐藏入口；
 // 接入多模态模型后改回 true 即可恢复。
-export const SHOW_PHOTO_RECOGNITION = false;
+export const SHOW_PHOTO_RECOGNITION = true;

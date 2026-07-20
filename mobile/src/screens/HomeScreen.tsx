@@ -6,11 +6,13 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../services/api';
+import { useUserStore } from '../stores/userStore';
 import { Colors, Spacing, BorderRadius, Shadows } from '../theme';
 import { SHOW_PHOTO_RECOGNITION } from '../config';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
+  const isLoggedIn = useUserStore((s) => s.isLoggedIn);
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [hotSpots, setHotSpots] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -73,6 +75,20 @@ export default function HomeScreen() {
           <Text style={styles.emergencyText}>{a.title}: {a.content}</Text>
         </View>
       ))}
+
+      {/* ── Login Banner ── */}
+      {!isLoggedIn && (
+        <TouchableOpacity style={styles.loginBanner} onPress={() => navigation.navigate('Profile')}>
+          <View style={styles.loginBannerLeft}>
+            <Ionicons name="person-circle-outline" size={24} color={Colors.goldDark} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.loginBannerTitle}>登录解锁 AI 导览</Text>
+              <Text style={styles.loginBannerSub}>手机号一键登录，享受个性化服务</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={Colors.goldDark} />
+        </TouchableOpacity>
+      )}
 
       {/* ── AI Guide CTA ── */}
       <TouchableOpacity
@@ -248,6 +264,19 @@ const styles = StyleSheet.create({
   emergencyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
   emergencyTitle: { fontSize: 14, fontWeight: '700', color: Colors.vermilion },
   emergencyText: { fontSize: 13, color: Colors.vermilion, lineHeight: 20 },
+
+  // Login banner
+  loginBanner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: Spacing.lg, marginTop: Spacing.lg,
+    padding: Spacing.lg, borderRadius: BorderRadius.lg,
+    backgroundColor: Colors.white,
+    borderWidth: 1, borderColor: Colors.goldLight,
+    ...Shadows.sm,
+  },
+  loginBannerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  loginBannerTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  loginBannerSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
 
   // AI Card
   aiCard: {

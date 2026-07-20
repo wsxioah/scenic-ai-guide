@@ -16,11 +16,10 @@ let _webViewRef: WebView | null = null;
 export function avatarSendAction(action: string, extra: Record<string, any> = {}) {
   const message = JSON.stringify({ action, ...extra });
   console.log('[Avatar] sendAction:', action, 'ref:', !!_webViewRef);
-  if (_webViewRef) {
-    // Escape backslashes and quotes for safe JS string literal
-    const escaped = message.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    _webViewRef.injectJavaScript("window.dhHandleCommand('" + escaped + "');true;");
-  }
+  if (!_webViewRef) return;
+  // injectJavaScript is more reliable than postMessage on Android
+  const escaped = message.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  _webViewRef.injectJavaScript("window.dhHandleCommand('" + escaped + "');true;");
 }
 
 export default function AvatarWebView({ style, modelId = 'female', onLipSyncStarted }: AvatarWebViewProps) {
